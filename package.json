@@ -1,0 +1,27 @@
+{
+    "name": "sei",
+    "private": true,
+    "scripts": {
+        "build": "turbo build",
+        "dev": "turbo dev",
+        "lint": "turbo lint",
+        "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+        "prisma": "yarn workspace @sei/prisma db",
+        "db": "yarn workspace @sei/prisma",
+        "api": "yarn workspace @sei/api"
+    },
+    "devDependencies": {
+        "@sei/tsconfig": "*",
+        "dotenv-cli": "^7.3.0",
+        "prettier": "^3.1.1",
+        "turbo": "latest"
+    },
+    "engines": {
+        "node": ">=18"
+    },
+    "packageManager": "yarn@1.22.19",
+    "workspaces": [
+        "apps/*",
+        "packages/*"
+    ]
+}

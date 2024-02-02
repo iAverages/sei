@@ -1,0 +1,10 @@
+{
+    "name": "@sei/api",
+    "version": "0.0.0",
+    "author": "iAverages <31937542+iAverages@users.noreply.github.com>",
+    "scripts": {
+        "cargo": "cargo",
+        "dev": "cargo watch -x run",
+        "build": "cargo build"
+    }
+}

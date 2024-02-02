@@ -1,0 +1,3 @@
+{
+    "extends": "@sei/tsconfig/base.json",
+}
