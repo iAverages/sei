@@ -1,13 +1,29 @@
-import { createSignal } from "solid-js";
+import { Show, createSignal } from "solid-js";
 import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "../components/ui/card";
 import { Button } from "~/components/ui/button";
-
-export default function Home() {
-    const [count, setCount] = createSignal(0);
+import { RouteDefinition } from "@solidjs/router";
+import { createQuery } from "@tanstack/solid-query";
+const createUser = () =>
+    createQuery(() => ({
+        queryKey: ["user"],
+        queryFn: async () => {
+            return fetch("http://localhost:3001/api/v1/auth/me", {
+                credentials: "include",
+            }).then((res) => res.json());
+        },
+    }));
+export default function Home(props: RouteDefinition) {
+    const user = createUser();
 
     return (
         <div class={"p-6"}>
-            <Card class="w-[380px]">
+            <a href="http://localhost:3001/oauth/mal/redirect">
+                <Button>Login</Button>
+            </a>
+            <Show when={user.data} fallback={<>Loading user...</>}>
+                <p>{JSON.stringify(user.data)}</p>
+            </Show>
+            {/* <Card class="w-[380px]">
                 <CardHeader>
                     <CardTitle>Notifications</CardTitle>
                     <CardDescription>You have 3 unread messages.</CardDescription>
@@ -32,7 +48,7 @@ export default function Home() {
                 <CardFooter>
                     <Button class="w-full">Mark all as read</Button>
                 </CardFooter>
-            </Card>
+            </Card> */}
         </div>
     );
 }

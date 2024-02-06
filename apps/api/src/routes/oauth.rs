@@ -1,17 +1,67 @@
 use axum::{
     extract::{Query, State},
-    response::Redirect,
+    http::{header::SET_COOKIE, HeaderValue, Response, StatusCode},
+    response::{IntoResponse, Redirect},
     Extension, Json,
 };
-use axum_extra::extract::cookie::{Cookie, PrivateCookieJar};
+use axum_extra::extract::{
+    cookie::{Cookie, PrivateCookieJar, SameSite},
+    CookieJar,
+};
+use chrono::Utc;
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthorizationCode, CsrfToken,
     PkceCodeChallenge, PkceCodeVerifier, TokenResponse,
 };
-use serde::{Deserialize, Serialize};
+use rand::{rngs::StdRng, RngCore, SeedableRng};
+use serde::Deserialize;
+use serde_json::json;
+use time;
 
-use crate::models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User};
 use crate::AppState;
+use crate::{
+    helpers::json_response,
+    models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User},
+};
+
+pub async fn create_session(state: AppState, user: User) -> Result<Cookie<'static>, anyhow::Error> {
+    let expiration = Utc::now()
+        .checked_add_signed(chrono::Duration::days(30))
+        .expect("valid timestamp");
+
+    let mut token_str = [0u8; 32];
+    StdRng::from_entropy().fill_bytes(&mut token_str);
+    let token = hex::encode(token_str);
+
+    let cookie = Cookie::build(("token", token.clone()))
+        .path("/")
+        .expires(
+            time::OffsetDateTime::from_unix_timestamp(expiration.timestamp())
+                .expect("valid timestamp"),
+        )
+        .max_age(time::Duration::days(30))
+        .http_only(true)
+        .secure(true)
+        .same_site(SameSite::None)
+        .build();
+
+    let res = sqlx::query!(
+        "INSERT INTO sessions (user_id, id, expires_at) VALUES (?, ?, ?)",
+        user.id,
+        token,
+        expiration
+    )
+    .execute(&state.db)
+    .await;
+
+    match res {
+        Ok(_) => Ok(cookie.clone()),
+        Err(err) => {
+            tracing::error!("Error creating session: {:?}", err);
+            Err(err.into())
+        }
+    }
+}
 
 #[derive(Deserialize)]
 pub struct MalRedirectQuery {
@@ -45,13 +95,14 @@ pub async fn handle_mal_redirect(
 pub async fn handle_mal_callback(
     Query(query): Query<MalRedirectQuery>,
     State(state): State<AppState>,
-    jar: PrivateCookieJar,
+    private_jar: PrivateCookieJar,
+    jar: CookieJar,
     Extension(oauth_client): Extension<BasicClient>,
-) -> Json<User> {
-    let csrf_token = jar
+) -> impl IntoResponse {
+    let csrf_token = private_jar
         .get("mal_csrf_token")
         .expect("No CSRF token in cookie jar");
-    let pkce_verifier_str = jar
+    let pkce_verifier_str = private_jar
         .get("mal_pkce_verifier")
         .expect("No PKCE verifier in cookie jar");
 
@@ -75,7 +126,7 @@ pub async fn handle_mal_callback(
         Some(user) => user,
         None => {
             create_user(
-                state,
+                state.clone(),
                 CreateUser {
                     name: mal_user.name,
                     picture: mal_user.picture,
@@ -88,5 +139,9 @@ pub async fn handle_mal_callback(
         }
     };
 
-    Json(user)
+    let cookie = create_session(state.clone(), user).await.unwrap();
+
+    let updated_jar = jar.add(cookie);
+
+    (updated_jar, Redirect::temporary("http://localhost:3000"))
 }

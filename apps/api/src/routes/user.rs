@@ -1,15 +1,10 @@
-use axum::{http::StatusCode, response::IntoResponse};
-
-use crate::helpers::json_response;
 use axum::Json;
+use axum::{http::StatusCode, response::IntoResponse, Extension};
 use serde_json::json;
 
+use crate::{helpers::json_response, types::CurrentUser};
+
 #[axum::debug_handler]
-pub async fn get_user() -> impl IntoResponse {
-    // (StatusCode::OK, "Hello, World!").into_response()
-    json_response!(StatusCode::OK, {
-        "id": 1,
-        "name": "John Doe",
-        "email": ""
-    })
+pub async fn get_user(Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
+    json_response!(StatusCode::OK, { "user": user })
 }

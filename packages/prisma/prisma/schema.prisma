@@ -20,4 +20,17 @@ model users {
   created_at        DateTime  @default(now())
   updated_at        DateTime  @default(now())
   deleted_at        DateTime?
+
+  sessions sessions[]
+}
+
+model sessions {
+  id         String   @id
+  user_id    String
+  expires_at DateTime
+  created_at DateTime @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@index([user_id], name: "user_id")
 }

@@ -5,7 +5,9 @@ const createUser = () =>
     createQuery(() => ({
         queryKey: ["user"],
         queryFn: async () => {
-            return fetch("http://localhost:3001/api/auth/me").then((res) => res.json());
+            return fetch("http://localhost:3001/api/v1/auth/me", {
+                credentials: "include",
+            }).then((res) => res.json());
         },
     }));
 

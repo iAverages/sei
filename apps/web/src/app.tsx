@@ -16,11 +16,9 @@ const App: Component = () => {
             <QueryClientProvider client={queryClient}>
                 <ColorModeScript />
                 <ColorModeProvider>
-                    <AuthProvider>
-                        <main>
-                            <Route />
-                        </main>
-                    </AuthProvider>
+                    <main>
+                        <Route />
+                    </main>
                 </ColorModeProvider>
             </QueryClientProvider>
         </>

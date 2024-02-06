@@ -1,16 +1,26 @@
 mod helpers;
+mod middleware;
 mod models;
 mod routes;
+mod types;
 
 use std::net::SocketAddr;
 
-use axum::{extract::FromRef, http::Method, routing::get, Extension, Router};
+use axum::{
+    extract::FromRef,
+    http::{HeaderValue, Method},
+    middleware::from_fn_with_state,
+    routing::get,
+    Extension, Router,
+};
 use axum_extra::extract::cookie::Key;
 use dotenvy::dotenv;
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client;
 use sqlx::mysql::MySqlPoolOptions;
-use tower_http::cors::{Any, CorsLayer};
+use tower_http::cors::{AllowOrigin, CorsLayer};
+
+use crate::middleware::auth_guard::guard;
 
 fn create_oauth_client(api_url: String, client_id: String, client_secret: String) -> BasicClient {
     let redirect_url = api_url + "/oauth/mal/callback";
@@ -62,7 +72,10 @@ async fn main() {
 
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST])
-        .allow_origin(Any);
+        .allow_credentials(true)
+        .allow_origin(AllowOrigin::exact(HeaderValue::from_static(
+            "http://localhost:3000",
+        )));
 
     let api_url = std::env::var("APP_URL").unwrap_or("http://localhost:3001".to_string());
     let mal_client_id = std::env::var("MAL_CLIENT_ID").expect("MAL_CLIENT_ID not set");
@@ -87,7 +100,13 @@ async fn main() {
         create_oauth_client(api_url.clone(), mal_client_id.clone(), mal_client_secret);
 
     let app = Router::new()
-        .route("/api/auth/me", get(routes::user::get_user))
+        .nest(
+            "/api/v1",
+            Router::new()
+                .route("/auth/me", get(routes::user::get_user))
+                .route_layer(from_fn_with_state(state.clone(), guard))
+                .with_state(state.clone()),
+        )
         .route(
             "/oauth/mal/redirect",
             get(routes::oauth::handle_mal_redirect),
