@@ -6,5 +6,5 @@ use crate::{helpers::json_response, types::CurrentUser};
 
 #[axum::debug_handler]
 pub async fn get_user(Extension(user): Extension<CurrentUser>) -> impl IntoResponse {
-    json_response!(StatusCode::OK, { "user": user })
+    json_response!(StatusCode::OK, user)
 }

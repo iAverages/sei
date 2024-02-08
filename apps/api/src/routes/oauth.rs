@@ -1,8 +1,7 @@
 use axum::{
     extract::{Query, State},
-    http::{header::SET_COOKIE, HeaderValue, Response, StatusCode},
     response::{IntoResponse, Redirect},
-    Extension, Json,
+    Extension,
 };
 use axum_extra::extract::{
     cookie::{Cookie, PrivateCookieJar, SameSite},
@@ -15,14 +14,10 @@ use oauth2::{
 };
 use rand::{rngs::StdRng, RngCore, SeedableRng};
 use serde::Deserialize;
-use serde_json::json;
 use time;
 
+use crate::models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User};
 use crate::AppState;
-use crate::{
-    helpers::json_response,
-    models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User},
-};
 
 pub async fn create_session(state: AppState, user: User) -> Result<Cookie<'static>, anyhow::Error> {
     let expiration = Utc::now()
@@ -70,7 +65,7 @@ pub struct MalRedirectQuery {
 
 #[axum::debug_handler]
 pub async fn handle_mal_redirect(
-    State(state): State<AppState>,
+    State(_): State<AppState>,
     jar: PrivateCookieJar,
     Extension(oauth_client): Extension<BasicClient>,
 ) -> Result<(PrivateCookieJar, Redirect), Redirect> {

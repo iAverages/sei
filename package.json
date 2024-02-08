@@ -8,7 +8,8 @@
         "format": "prettier --write \"**/*.{ts,tsx,md}\"",
         "prisma": "yarn workspace @sei/prisma db",
         "db": "yarn workspace @sei/prisma",
-        "api": "yarn workspace @sei/api"
+        "api": "yarn workspace @sei/api",
+        "web": "yarn workspace @sei/web"
     },
     "devDependencies": {
         "@sei/tsconfig": "*",

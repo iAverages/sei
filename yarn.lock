@@ -750,10 +750,10 @@
   resolved "https://registry.yarnpkg.com/@solid-primitives/utils/-/utils-6.2.2.tgz#01c28bab7b2842b46bd5559716497decc51ad3cd"
   integrity sha512-11ypVbp987XxETeRqY5Y3OmmTpm8/jZqJXRvo6AyqBthzkvvjEdReuUMU2yVb+pwWGxfZpWHZ6EUCcGXUMhfwg==
 
-"@solidjs/router@^0.8.2":
-  version "0.8.4"
-  resolved "https://registry.yarnpkg.com/@solidjs/router/-/router-0.8.4.tgz#aa19bee6dc6289807821b2d0dd5cf07a79da6b68"
-  integrity sha512-Gi/WVoVseGMKS1DBdT3pNAMgOzEOp6Q3dpgNd2mW9GUEnVocPmtyBjDvXwN6m7tjSGsqqfqJFXk7bm1hxabSRw==
+"@solidjs/router@^0.11.3":
+  version "0.11.5"
+  resolved "https://registry.yarnpkg.com/@solidjs/router/-/router-0.11.5.tgz#d9ba1a0432b9597be51be2591c4a377b046995ef"
+  integrity sha512-nclebUUufZT37rB5l0LbJn92vZwJOhYVltfjfLFI3yAcMlwiil5JOy6X2FEgekWsoX29No/GCBTkYfrSZCRfaw==
 
 "@swc/helpers@^0.5.0":
   version "0.5.3"
@@ -767,6 +767,18 @@
   resolved "https://registry.yarnpkg.com/@tanstack/query-core/-/query-core-5.18.0.tgz#445a0cbf94b49d57132255c74570cfb63cf444c2"
   integrity sha512-8c6nxeAnGHxIDZIyDmHdmgFt4D+LprAQaJmjsnM4szcIjsWOyFlzxdqQUuQ/XuQRvUgqYaqlJTtDADlSS7pTPQ==
 
+"@tanstack/query-devtools@5.18.1":
+  version "5.18.1"
+  resolved "https://registry.yarnpkg.com/@tanstack/query-devtools/-/query-devtools-5.18.1.tgz#f36e0257064ad9aeaff06d23112cca4795b82e96"
+  integrity sha512-U8bDnDGuwdVMT4ndegPTcjOHOmX/UOjjB7o7UalRIq3DMHLRf8Ufh4+xoAvk3LNK5GBmUBfFSw4osYe5l9n7Lw==
+
+"@tanstack/solid-query-devtools@^5.18.1":
+  version "5.18.1"
+  resolved "https://registry.yarnpkg.com/@tanstack/solid-query-devtools/-/solid-query-devtools-5.18.1.tgz#c6896061d5077fafcd80db4136606acc18d8d7e9"
+  integrity sha512-VXILpPXtxuCh9sHIL1Gi8MQtCn5UY+5XvroBgYlvkvkj5+wgEZtTw/Mkzlx6kfQbmbQfCi65QsTJme33nr38LA==
+  dependencies:
+    "@tanstack/query-devtools" "5.18.1"
+
 "@tanstack/solid-query@^5.18.0":
   version "5.18.0"
   resolved "https://registry.yarnpkg.com/@tanstack/solid-query/-/solid-query-5.18.0.tgz#d6350e37b78661a477b8db8449d401725ac571b8"
@@ -774,6 +786,11 @@
   dependencies:
     "@tanstack/query-core" "5.18.0"
     solid-js "^1.8.7"
+
+"@thisbeyond/solid-dnd@^0.7.5":
+  version "0.7.5"
+  resolved "https://registry.yarnpkg.com/@thisbeyond/solid-dnd/-/solid-dnd-0.7.5.tgz#c7585511bc83b5b973315f956296431124b6562c"
+  integrity sha512-DfI5ff+yYGpK9M21LhYwIPlbP2msKxN2ARwuu6GF8tT1GgNVDTI8VCQvH4TJFoVApP9d44izmAcTh/iTCH2UUw==
 
 "@types/babel__core@^7.20.4":
   version "7.20.5"
@@ -1614,7 +1631,7 @@ signal-exit@^4.0.1:
   resolved "https://registry.yarnpkg.com/signal-exit/-/signal-exit-4.1.0.tgz#952188c1cbd546070e2dd20d0f41c0ae0530cb04"
   integrity sha512-bzyZ1e88w9O1iNJbKnOlvYTrWPDl46O1bG0D3XInv+9tkPrxrN8jUUTiFlDkkmKWgn1M6CfIA13SuGqOa9Korw==
 
-solid-devtools@^0.29.2:
+solid-devtools@^0.29.3:
   version "0.29.3"
   resolved "https://registry.yarnpkg.com/solid-devtools/-/solid-devtools-0.29.3.tgz#62c563ab5c340d02168b63017c204f5632aad537"
   integrity sha512-9j3VxVbEoC54ML22gAMytR8ZS1nk9xKatsWziKSkI4c/Bcyh4sxQBGESHuXSLs9xaxpyGVTmFl3hknoxEpKzlA==

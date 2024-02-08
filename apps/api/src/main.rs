@@ -104,6 +104,7 @@ async fn main() {
             "/api/v1",
             Router::new()
                 .route("/auth/me", get(routes::user::get_user))
+                .route("/mal/anime", get(routes::mal::get_anime))
                 .route_layer(from_fn_with_state(state.clone(), guard))
                 .with_state(state.clone()),
         )

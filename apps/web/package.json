@@ -1,6 +1,7 @@
 {
     "name": "@sei/web",
     "version": "0.0.0",
+    "type": "module",
     "description": "",
     "scripts": {
         "start": "vite",
@@ -10,9 +11,10 @@
     },
     "license": "MIT",
     "devDependencies": {
+        "@tanstack/solid-query-devtools": "^5.18.1",
         "autoprefixer": "^10.4.17",
         "postcss": "^8.4.33",
-        "solid-devtools": "^0.29.2",
+        "solid-devtools": "^0.29.3",
         "tailwindcss": "^3.4.1",
         "vite": "^5.0.11",
         "vite-plugin-solid": "^2.8.2",
@@ -20,8 +22,9 @@
     },
     "dependencies": {
         "@kobalte/core": "^0.12.1",
-        "@solidjs/router": "^0.8.2",
+        "@solidjs/router": "^0.11.3",
         "@tanstack/solid-query": "^5.18.0",
+        "@thisbeyond/solid-dnd": "^0.7.5",
         "class-variance-authority": "^0.7.0",
         "clsx": "^2.1.0",
         "solid-icons": "^1.1.0",
