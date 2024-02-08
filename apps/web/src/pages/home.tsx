@@ -1,4 +1,4 @@
-import { useDragDropContext } from "@thisbeyond/solid-dnd";
+import { DragDropDebugger, useDragDropContext } from "@thisbeyond/solid-dnd";
 import {
     DragDropProvider,
     DragDropSensors,
@@ -7,7 +7,7 @@ import {
     createSortable,
     closestCenter,
 } from "@thisbeyond/solid-dnd";
-import { For, Show, createEffect, createSignal } from "solid-js";
+import { For, Show, createEffect, createSignal, onCleanup, onMount } from "solid-js";
 import { Button } from "~/components/ui/button";
 import { RouteSectionProps } from "@solidjs/router";
 import { createUser } from "~/components/auth";
@@ -20,17 +20,19 @@ type AnimeItem = {
 const AnimeCard = (props: { anime: AnimeItem }) => {
     const sortable = createSortable(props.anime.node.id);
 
-    const [state] = useDragDropContext();
+    // const [state] = useDragDropContext();
     return (
         <div
             use:sortable
             class="sortable"
             classList={{
                 "opacity-25": sortable.isActiveDraggable,
-                "transition-transform": !!state.active.draggable,
+                // "transition-transform": !!state.active.draggable,
             }}>
-            <img src={props.anime.node.main_picture.medium} />
-            <p>{props.anime.node.title}</p>
+            <div>
+                <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.node.main_picture.medium} />
+                <p>{props.anime.node.title}</p>
+            </div>
         </div>
     );
 };
@@ -54,6 +56,36 @@ const useAnimeList = () => {
             return anime;
         },
     }));
+};
+
+// Fixes issue with being able to drag beyond some point
+// im assuimg the images break the layout and solid-dnd doesnt
+// pick it up for whatever reason
+const Fix = () => {
+    const [, { recomputeLayouts }] = useDragDropContext()!;
+
+    let ticking = false;
+
+    const update = () => {
+        if (!ticking) {
+            window.requestAnimationFrame(function () {
+                recomputeLayouts();
+                ticking = false;
+            });
+
+            ticking = true;
+        }
+    };
+
+    onMount(() => {
+        document.addEventListener("scroll", update);
+    });
+
+    onCleanup(() => {
+        document.removeEventListener("scroll", update);
+    });
+
+    return null;
 };
 
 export default function Home(props: RouteSectionProps) {
@@ -88,17 +120,14 @@ export default function Home(props: RouteSectionProps) {
 
     return (
         <div class={"p-6 flex flex-col gap-3"}>
-            <a href="http://localhost:3001/oauth/mal/redirect">
-                <Button>Login</Button>
-            </a>
             <Show when={user.data} fallback={<>Loading user...</>}>
                 <p>{JSON.stringify(user.data)}</p>
             </Show>
 
-            {/* <SortableVerticalListExample /> */}
-
             <Show when={anime.data}>
                 <DragDropProvider onDragStart={onDragStart} onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+                    <Fix />
+                    {/* <DragDropDebugger /> */}
                     <DragDropSensors />
                     <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6"}>
                         <SortableProvider ids={ids()}>
@@ -109,6 +138,7 @@ export default function Home(props: RouteSectionProps) {
                     </div>
 
                     <DragOverlay>
+                        {/* {(draggable) => <AnimeCard anime={items().find((a) => a.node.id === draggable.id)} />} */}
                         <div class="sortable">{activeItem()}</div>
                     </DragOverlay>
                 </DragDropProvider>
