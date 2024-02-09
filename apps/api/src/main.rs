@@ -1,4 +1,5 @@
 mod helpers;
+mod mal;
 mod middleware;
 mod models;
 mod routes;
@@ -10,7 +11,7 @@ use axum::{
     extract::FromRef,
     http::{HeaderValue, Method},
     middleware::from_fn_with_state,
-    routing::get,
+    routing::{get, post},
     Extension, Router,
 };
 use axum_extra::extract::cookie::Key;
@@ -18,7 +19,7 @@ use dotenvy::dotenv;
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client;
 use sqlx::mysql::MySqlPoolOptions;
-use tower_http::cors::{AllowOrigin, CorsLayer};
+use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 
 use crate::middleware::auth_guard::guard;
 
@@ -73,6 +74,7 @@ async fn main() {
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST])
         .allow_credentials(true)
+        .allow_headers(AllowHeaders::mirror_request())
         .allow_origin(AllowOrigin::exact(HeaderValue::from_static(
             "http://localhost:3000",
         )));
@@ -104,7 +106,8 @@ async fn main() {
             "/api/v1",
             Router::new()
                 .route("/auth/me", get(routes::user::get_user))
-                .route("/mal/anime", get(routes::mal::get_anime))
+                .route("/anime", get(routes::anime::get_anime))
+                .route("/order", post(routes::anime::update_list_order))
                 .route_layer(from_fn_with_state(state.clone(), guard))
                 .with_state(state.clone()),
         )

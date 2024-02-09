@@ -21,7 +21,29 @@ model users {
   updated_at        DateTime  @default(now())
   deleted_at        DateTime?
 
-  sessions sessions[]
+  sessions    sessions[]
+  anime_users anime_users[]
+}
+
+enum Status {
+  WATCHING
+  COMPLETED
+  PLAN_TO_WATCH
+}
+
+model anime_users {
+  user_id        String
+  anime_id       Int
+  status         Status   @default(PLAN_TO_WATCH)
+  watch_priority Int      @default(0) // 0 = not set
+  created_at     DateTime @default(now())
+  updated_at     DateTime @default(now())
+
+  user users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+
+  @@id([user_id, anime_id])
+  @@index([user_id], name: "user_id")
+  @@index([anime_id], name: "anime_id")
 }
 
 model sessions {

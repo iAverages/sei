@@ -16,3 +16,12 @@ pub struct Session {
     pub expires_at: chrono::NaiveDateTime,
     pub created_at: chrono::NaiveDateTime,
 }
+
+#[derive(sqlx::FromRow, Serialize, Deserialize)]
+pub struct Anime {
+    pub id: String,
+    pub mal_id: i32,
+    pub title: String,
+    pub picture: String,
+    pub created_at: chrono::NaiveDateTime,
+}
