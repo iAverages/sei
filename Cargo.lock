@@ -110,6 +110,7 @@ dependencies = [
  "axum-extra",
  "chrono",
  "cuid",
+ "deadqueue",
  "dotenvy",
  "hex",
  "lazy_static",
@@ -512,6 +513,16 @@ dependencies = [
  "num",
  "rand",
  "sha3",
+]
+
+[[package]]
+name = "deadqueue"
+version = "0.2.4"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "16a2561fd313df162315935989dceb8c99db4ee1933358270a57a3cfb8c957f3"
+dependencies = [
+ "crossbeam-queue",
+ "tokio",
 ]
 
 [[package]]

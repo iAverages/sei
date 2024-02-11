@@ -31,6 +31,57 @@ enum Status {
   PLAN_TO_WATCH
 }
 
+enum AiringStatus {
+  FINISHED
+  RELEASING
+  NOT_YET_RELEASED
+  CANCELLED
+  HIATUS
+}
+
+model animes {
+  id            Int          @unique
+  english_title String
+  romaji_title  String
+  status        AiringStatus
+
+  picture    String
+  created_at DateTime @default(now())
+  updated_at DateTime @default(now())
+
+  related_animes anime_relations[] @relation("related_anime")
+  base_animes    anime_relations[] @relation("base_anime")
+
+  anime_users anime_users[]
+}
+
+enum Relation {
+  ADAPTATION
+  PREQUEL
+  SEQUEL
+  PARENT
+  SIDE_STORY
+  CHARACTER
+  SUMMARY
+  ALTERNATIVE
+  SPIN_OFF
+  OTHER
+  SOURCE
+  COMPILATION
+  CONTAINS
+}
+
+model anime_relations {
+  base_anime       animes @relation("base_anime", fields: [base_anime_id], references: [id])
+  base_anime_id    Int
+  related_anime    animes @relation("related_anime", fields: [related_anime_id], references: [id])
+  related_anime_id Int
+
+  relation Relation
+
+  @@id([base_anime_id, related_anime_id])
+}
+
 model anime_users {
   user_id        String
   anime_id       Int
@@ -39,7 +90,8 @@ model anime_users {
   created_at     DateTime @default(now())
   updated_at     DateTime @default(now())
 
-  user users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  user   users   @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
+  animes animes? @relation(fields: [anime_id], references: [id])
 
   @@id([user_id, anime_id])
   @@index([user_id], name: "user_id")

@@ -1,23 +1,33 @@
+mod anime;
 mod helpers;
-mod mal;
+mod importer;
 mod middleware;
 mod models;
+mod queue;
 mod routes;
 mod types;
 
-use std::net::SocketAddr;
+use std::{
+    fmt::{self, Display, Formatter},
+    net::SocketAddr,
+    sync::Arc,
+};
 
 use axum::{
     extract::FromRef,
-    http::{HeaderValue, Method},
+    http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
+    response::{IntoResponse, Response},
     routing::{get, post},
-    Extension, Router,
+    Extension, Json, Router,
 };
 use axum_extra::extract::cookie::Key;
+use deadqueue::unlimited::Queue;
 use dotenvy::dotenv;
+use helpers::json_response;
 use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client;
+use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 
@@ -39,11 +49,20 @@ fn create_oauth_client(api_url: String, client_id: String, client_secret: String
     .set_redirect_uri(RedirectUrl::new(redirect_url).expect("Invalid redirect URL"))
 }
 
+type ImportQueue = Queue<i32>;
+
 #[derive(Clone)]
 pub struct AppState {
     key: Key,
     db: sqlx::Pool<sqlx::MySql>,
     reqwest: Client,
+    import_queue: Arc<ImportQueue>,
+}
+
+impl FromRef<AppState> for Arc<ImportQueue> {
+    fn from_ref(state: &AppState) -> Self {
+        state.import_queue.clone()
+    }
 }
 
 impl FromRef<AppState> for sqlx::Pool<sqlx::MySql> {
@@ -91,11 +110,13 @@ async fn main() {
         .expect("Failed to connect to database");
 
     let reqwest = Client::new();
+    let import_queue: Arc<ImportQueue> = Arc::new(ImportQueue::new());
 
     let state = AppState {
         key: Key::generate(),
         db: db_pool,
         reqwest,
+        import_queue,
     };
 
     let oauth_client =
@@ -121,7 +142,9 @@ async fn main() {
         )
         .layer(Extension(oauth_client))
         .layer(cors)
-        .with_state(state);
+        .with_state(state.clone());
+
+    tokio::spawn(async move { queue::import_queue_worker(state).await });
 
     let address = SocketAddr::from(([127, 0, 0, 1], 3001));
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
@@ -129,4 +152,31 @@ async fn main() {
     axum::serve(listener, app.into_make_service())
         .await
         .unwrap();
+}
+
+// Make our own error that wraps `anyhow::Error`.
+pub struct AppError(anyhow::Error);
+
+// Tell axum how to convert `AppError` into a response.
+impl IntoResponse for AppError {
+    fn into_response(self) -> Response {
+        json_response!(StatusCode::INTERNAL_SERVER_ERROR, {"message":"Internal Server Error"})
+    }
+}
+
+// This enables using `?` on functions that return `Result<_, anyhow::Error>` to turn them into
+// `Result<_, AppError>`. That way you don't need to do that manually.
+impl<E> From<E> for AppError
+where
+    E: Into<anyhow::Error>,
+{
+    fn from(err: E) -> Self {
+        Self(err.into())
+    }
+}
+
+impl Display for AppError {
+    fn fmt(&self, f: &mut Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self.0)
+    }
 }

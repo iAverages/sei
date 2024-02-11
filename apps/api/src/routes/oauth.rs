@@ -16,8 +16,11 @@ use rand::{rngs::StdRng, RngCore, SeedableRng};
 use serde::Deserialize;
 use time;
 
-use crate::models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User};
-use crate::AppState;
+use crate::{anime::get_mal_user_list, AppState};
+use crate::{
+    importer,
+    models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User},
+};
 
 pub async fn create_session(state: AppState, user: User) -> Result<Cookie<'static>, anyhow::Error> {
     let expiration = Utc::now()
@@ -134,9 +137,17 @@ pub async fn handle_mal_callback(
         }
     };
 
-    let cookie = create_session(state.clone(), user).await.unwrap();
+    let cookie = create_session(state.clone(), user.clone()).await.unwrap();
 
     let updated_jar = jar.add(cookie);
+
+    let reqwest = state.reqwest.clone();
+    let mal_user_list = get_mal_user_list(reqwest, user).await;
+
+    if let Ok(mal) = mal_user_list {
+        let ids = mal.data.iter().map(|item| item.node.id).collect::<Vec<_>>();
+        importer::import_anime_from_ids(state, ids);
+    }
 
     (updated_jar, Redirect::temporary("http://localhost:3000"))
 }
