@@ -6,11 +6,11 @@ use serde_json::json;
 use sqlx::{query_as, MySql, QueryBuilder};
 
 use crate::{
-    anime::{self},
+    anime::{self, LocalAnineListResult},
     helpers::json_response,
     models::user::User,
     types::CurrentUser,
-    AppState,
+    AppState, ImportQueueItem,
 };
 
 struct AnimeIdResponse {
@@ -33,7 +33,7 @@ pub async fn get_anime(
     .await
     .expect("Failed to get user");
 
-    let local_animes_future = anime::get_local_user_list(state.db, full_user.clone());
+    let local_animes_future = anime::get_local_user_list(state.db.clone(), full_user.clone());
     let mal_animes_future = anime::get_mal_user_list(state.reqwest, full_user.clone());
 
     let (local_animes, mal_animes) = tokio::join!(local_animes_future, mal_animes_future);
@@ -51,12 +51,49 @@ pub async fn get_anime(
                 .iter()
                 .any(|local| local.id == anime.node.id)
             {
-                state.import_queue.push(anime.node.id);
+                state.import_queue.push(ImportQueueItem {
+                    anime_id: anime.node.id,
+                    user_id: full_user.id.clone(),
+                });
             }
         });
     }
 
-    json_response!(StatusCode::OK, local_animes)
+    let user_order = query_as!(
+        AnimeIdResponse,
+        r#"
+        SELECT anime_id FROM anime_users WHERE user_id = ? ORDER BY watch_priority
+        "#,
+        full_user.id
+    );
+
+    let db_order = user_order
+        .fetch_all(&state.db)
+        .await
+        .expect("Failed to get anime order");
+
+    let mut ordered_animes = vec![];
+
+    for item in db_order {
+        let anime = local_animes
+            .animes
+            .iter()
+            .find(|anime| anime.id == item.anime_id)
+            .cloned();
+
+        if anime.is_none() {
+            continue;
+        }
+
+        ordered_animes.push(anime.unwrap());
+    }
+
+    let res = LocalAnineListResult {
+        animes: ordered_animes,
+        status: anime::ListStatus::Updating,
+    };
+
+    json_response!(StatusCode::OK, res)
 
     // tracing::info!("Anime list: {:?}", animes.data.len());
 

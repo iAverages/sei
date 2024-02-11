@@ -21,13 +21,13 @@ const AnimeCardComp = (props: { anime: AnimeList; disabled?: boolean }) => (
             "opacity-25": props.disabled,
             "pointer-events-none": props.disabled,
         }}>
-        <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.node.main_picture.medium} />
-        <p>{props.anime.node.title}</p>
+        <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.picture} />
+        <p>{props.anime.romaji_title}</p>
     </div>
 );
 
 const AnimeCard = (props: { anime: AnimeList; disabled?: boolean }) => {
-    const sortable = createSortable(props.anime.node.id);
+    const sortable = createSortable(props.anime.id);
     const [state] = useDragDropContext();
 
     return (
@@ -97,26 +97,27 @@ const broadcastTimeToJSTDate = (broadcastDay: string, broadcastTime: string) => 
 
 // Main function to check if the broadcast is within 12 hours of the user's current time
 function isBroadcastWithin12Hours(item: AnimeList) {
-    const broadcastDay = item.node.broadcast?.day_of_the_week;
-    const broadcastTime = item.node.broadcast?.start_time;
+    return false;
+    // const broadcastDay = item.broadcast?.day_of_the_week;
+    // const broadcastTime = item.broadcast?.start_time;
 
-    // Convert broadcast time to Date object in JST
-    const broadcastDate = broadcastTimeToJSTDate(broadcastDay, broadcastTime);
-    if (!broadcastDate) {
-        return false;
-    }
-    // Convert broadcast Date to UTC
-    const broadcastUTC = broadcastDate.getTime() - 9 * 60 * 60 * 1000; // subtract 9 hours from JST to get UTC
-    // Adjust broadcast time to user's local time
-    const broadcastLocalTime = new Date(broadcastUTC + new Date().getTimezoneOffset() * -1 * 60000);
+    // // Convert broadcast time to Date object in JST
+    // const broadcastDate = broadcastTimeToJSTDate(broadcastDay, broadcastTime);
+    // if (!broadcastDate) {
+    //     return false;
+    // }
+    // // Convert broadcast Date to UTC
+    // const broadcastUTC = broadcastDate.getTime() - 9 * 60 * 60 * 1000; // subtract 9 hours from JST to get UTC
+    // // Adjust broadcast time to user's local time
+    // const broadcastLocalTime = new Date(broadcastUTC + new Date().getTimezoneOffset() * -1 * 60000);
 
-    // Get current user time
-    const currentTime = new Date();
-    // Calculate difference in hours between broadcast time and current time
-    const diffHours = (broadcastLocalTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
+    // // Get current user time
+    // const currentTime = new Date();
+    // // Calculate difference in hours between broadcast time and current time
+    // const diffHours = (broadcastLocalTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
 
-    // Check if the difference is within ±12 hours
-    return Math.abs(diffHours) <= 12;
+    // // Check if the difference is within ±12 hours
+    // return Math.abs(diffHours) <= 12;
 }
 
 export default function Home(props: RouteSectionProps) {
@@ -124,28 +125,32 @@ export default function Home(props: RouteSectionProps) {
     const anime = useAnimeList();
 
     const featuredAnime = createMemo(() => {
-        const d = new Date();
-        const utc = d.getTime() + d.getTimezoneOffset() * 60000;
-        const nd = new Date(utc + 3600000 * 9);
-        const todayJp = new Date(nd).toLocaleString("en-US", { weekday: "long" }).toLowerCase();
-        const today = new Date().toLocaleString("en-US", { weekday: "long" }).toLowerCase();
-        console.log("today", today, todayJp);
-
-        const releasingToday = anime.data?.animes.filter(
-            (a) => isBroadcastWithin12Hours(a) && a.node.status === "currently_airing"
-        );
-        const releasingUnwatched = anime.data?.animes.filter((a) => {
-            return a.list_status.num_episodes_watched < a.node.num_episodes && a.node.status === "currently_airing";
-        });
-
         return {
-            releasingToday,
-            releasingUnwatched,
+            releasingToday: [],
+            releasingUnwatched: [],
         };
+        // const d = new Date();
+        // const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+        // const nd = new Date(utc + 3600000 * 9);
+        // const todayJp = new Date(nd).toLocaleString("en-US", { weekday: "long" }).toLowerCase();
+        // const today = new Date().toLocaleString("en-US", { weekday: "long" }).toLowerCase();
+        // console.log("today", today, todayJp);
+
+        // const releasingToday = anime.data?.animes.filter(
+        //     (a) => isBroadcastWithin12Hours(a) && a.node.status === "currently_airing"
+        // );
+        // const releasingUnwatched = anime.data?.animes.filter((a) => {
+        //     return a.list_status.num_episodes_watched < a.node.num_episodes && a.node.status === "currently_airing";
+        // });
+
+        // return {
+        //     releasingToday,
+        //     releasingUnwatched,
+        // };
     });
 
     const releasedAnime = createMemo(() => {
-        const released = anime.data?.animes.filter((a) => a.node.status === "finished_airing");
+        const released = anime.data?.animes.filter((a) => a.status === "FINISHED");
         return released;
     });
 
@@ -177,13 +182,13 @@ export default function Home(props: RouteSectionProps) {
         setItems(releasedAnime());
     });
 
-    const ids = () => items().map((item) => item.node.id);
+    const ids = () => items().map((item) => item.id);
 
     const onDragEnd = ({ draggable, droppable }) => {
         if (draggable && droppable) {
             const currentItems = items();
-            const fromIndex = currentItems.findIndex((a) => a.node.id === draggable.id);
-            const toIndex = currentItems.findIndex((a) => a.node.id === droppable.id);
+            const fromIndex = currentItems.findIndex((a) => a.id === draggable.id);
+            const toIndex = currentItems.findIndex((a) => a.id === droppable.id);
             if (fromIndex !== toIndex) {
                 const updatedItems = currentItems.slice();
                 updatedItems.splice(toIndex, 0, ...updatedItems.splice(fromIndex, 1));
@@ -197,7 +202,7 @@ export default function Home(props: RouteSectionProps) {
             <Button
                 onClick={async () => {
                     console.time("updated");
-                    await updateListOrder.mutateAsync(items()?.map((i) => i.node.id));
+                    await updateListOrder.mutateAsync(items()?.map((i) => i.id));
                     console.timeEnd("updated");
                 }}
                 class={"bg-blue-500"}>
@@ -210,37 +215,35 @@ export default function Home(props: RouteSectionProps) {
                     <div>We are importing your list</div>
                 </Show>
 
-                <Show when={anime.data.status !== ListStatus.Importing}>
-                    <Show when={anime.data.status === ListStatus.Updating}>
-                        <div>We are updating your list.</div>
-                    </Show>
-                    <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                        <For each={featuredAnime().releasingToday}>{(anime) => <AnimeCardComp anime={anime} />}</For>
-                    </div>
-                    <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                        <For each={featuredAnime().releasingUnwatched}>
-                            {(anime) => <AnimeCardComp anime={anime} />}
-                        </For>
-                    </div>
-
-                    <div class={"w-full h-1 bg-red-500"}></div>
-
-                    <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
-                        <Fix /> {/* See definition */}
-                        <DragDropSensors />
-                        <SortableProvider ids={ids()}>
-                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                                <For each={items()}>
-                                    {(anime) => <AnimeCard anime={anime} disabled={updateListOrder.isPending} />}
-                                </For>
-                            </div>
-                        </SortableProvider>
-                        <DragOverlay class={"transition-transform"}>
-                            {(draggable) => <AnimeCardComp anime={items().find((a) => a.node.id === draggable.id)} />}
-                        </DragOverlay>
-                    </DragDropProvider>
+                {/* <Show when={anime.data.status !== ListStatus.Importing}> */}
+                <Show when={anime.data.status === ListStatus.Updating}>
+                    <div>We are updating your list.</div>
                 </Show>
+                <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                    <For each={featuredAnime().releasingToday}>{(anime) => <AnimeCardComp anime={anime} />}</For>
+                </div>
+                <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                    <For each={featuredAnime().releasingUnwatched}>{(anime) => <AnimeCardComp anime={anime} />}</For>
+                </div>
+
+                <div class={"w-full h-1 bg-red-500"}></div>
+
+                <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+                    <Fix /> {/* See definition */}
+                    <DragDropSensors />
+                    <SortableProvider ids={ids()}>
+                        <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                            <For each={items()}>
+                                {(anime) => <AnimeCard anime={anime} disabled={updateListOrder.isPending} />}
+                            </For>
+                        </div>
+                    </SortableProvider>
+                    <DragOverlay class={"transition-transform"}>
+                        {(draggable) => <AnimeCardComp anime={items().find((a) => a.id === draggable.id)} />}
+                    </DragOverlay>
+                </DragDropProvider>
             </Show>
+            {/* </Show> */}
         </div>
     );
 }

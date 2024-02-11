@@ -43,8 +43,8 @@ pub struct MalAnimeListResponse {
 
 pub struct AnimeTableRow {
     pub id: i32,
-    pub english_title: String,
-    pub romaji_title: String,
+    pub english_title: Option<String>,
+    pub romaji_title: Option<String>,
     pub picture: String,
     pub status: String,
     pub updated_at: chrono::NaiveDateTime,
@@ -71,8 +71,8 @@ pub struct LocalAnimeRelation {
     pub relation: String,
 
     pub id: i32,
-    pub english_title: String,
-    pub romaji_title: String,
+    pub english_title: Option<String>,
+    pub romaji_title: Option<String>,
     pub picture: String,
     pub status: String,
     pub updated_at: chrono::NaiveDateTime,
@@ -89,11 +89,11 @@ pub enum AiringStatus {
     Hiatus,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct LocalAnime {
     pub id: i32,
-    pub english_title: String,
-    pub romaji_title: String,
+    pub english_title: Option<String>,
+    pub romaji_title: Option<String>,
     pub status: String,
     pub picture: String,
     pub updated_at: chrono::NaiveDateTime,
@@ -103,8 +103,8 @@ pub struct LocalAnime {
 
 pub struct DBAnime {
     pub id: i32,
-    pub english_title: String,
-    pub romaji_title: String,
+    pub english_title: Option<String>,
+    pub romaji_title: Option<String>,
     pub picture: String,
     pub status: String,
     pub updated_at: chrono::NaiveDateTime,
@@ -194,7 +194,7 @@ pub async fn get_local_user_list(
 
     let params = (0..ids.len()).map(|_| "?").collect::<Vec<&str>>();
 
-    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(format!(
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
         r#"
         SELECT
             *
@@ -202,14 +202,18 @@ pub async fn get_local_user_list(
             anime_relations
         INNER JOIN animes ON animes.id = anime_relations.related_anime_id
         WHERE
-            base_anime_id IN ( { } )
+            base_anime_id IN ( 
         "#,
-        params.join(",")
-    ));
+    );
 
-    query_builder.push_values(ids, |mut b, id| {
-        b.push_bind(id);
-    });
+    for (i, id) in ids.iter().enumerate() {
+        query_builder.push_bind(id);
+        if i < ids.len() - 1 {
+            query_builder.push(", ");
+        }
+    }
+
+    query_builder.push(")");
 
     let a = query_builder.build_query_as::<LocalAnimeRelation>();
 

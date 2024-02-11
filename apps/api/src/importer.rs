@@ -1,7 +1,10 @@
-use crate::AppState;
+use crate::{AppState, ImportQueueItem};
 
 pub fn import_anime_from_ids(state: AppState, ids: Vec<i32>) {
     for id in ids {
-        state.import_queue.push(id);
+        state.import_queue.push(ImportQueueItem {
+            anime_id: id,
+            user_id: "".to_string(),
+        });
     }
 }

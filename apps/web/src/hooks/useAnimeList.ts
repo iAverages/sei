@@ -1,8 +1,14 @@
 import { createQuery } from "@tanstack/solid-query";
 
 export interface AnimeList {
-    node: Anime;
-    list_status: AnimeListStatus;
+    created_at: string;
+    english_title: string;
+    id: number;
+    picture: string;
+    relation: any[];
+    romaji_title: string;
+    status: string;
+    updated_at: string;
 }
 
 export interface Anime {

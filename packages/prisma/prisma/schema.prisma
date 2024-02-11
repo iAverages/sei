@@ -41,8 +41,8 @@ enum AiringStatus {
 
 model animes {
   id            Int          @unique
-  english_title String
-  romaji_title  String
+  english_title String?
+  romaji_title  String       @default("")
   status        AiringStatus
 
   picture    String

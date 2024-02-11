@@ -49,7 +49,13 @@ fn create_oauth_client(api_url: String, client_id: String, client_secret: String
     .set_redirect_uri(RedirectUrl::new(redirect_url).expect("Invalid redirect URL"))
 }
 
-type ImportQueue = Queue<i32>;
+#[derive(Debug, Clone)]
+struct ImportQueueItem {
+    anime_id: i32,
+    user_id: String,
+}
+
+type ImportQueue = Queue<ImportQueueItem>;
 
 #[derive(Clone)]
 pub struct AppState {
