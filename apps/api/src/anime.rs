@@ -30,9 +30,25 @@ pub struct AnimeListNode {
 }
 
 #[derive(Deserialize, Serialize, Clone)]
+#[serde(rename_all = "snake_case")]
+pub enum MalListStatusStatus {
+    Watching,
+    Completed,
+    OnHold,
+    Dropped,
+    PlanToWatch,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
+pub struct MalListStatus {
+    pub status: String,
+    pub score: i32,
+}
+
+#[derive(Deserialize, Serialize, Clone)]
 pub struct AnimeListItem {
     pub node: AnimeListNode,
-    pub list_status: Value,
+    pub list_status: MalListStatus,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -47,6 +63,8 @@ pub struct AnimeTableRow {
     pub romaji_title: Option<String>,
     pub picture: String,
     pub status: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
     pub updated_at: chrono::NaiveDateTime,
     pub created_at: chrono::NaiveDateTime,
 }
@@ -75,6 +93,8 @@ pub struct LocalAnimeRelation {
     pub romaji_title: Option<String>,
     pub picture: String,
     pub status: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
     pub updated_at: chrono::NaiveDateTime,
     pub created_at: chrono::NaiveDateTime,
 }
@@ -101,6 +121,22 @@ pub struct LocalAnime {
     pub relation: Vec<LocalAnimeRelation>,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
+pub struct UserListAnime {
+    pub id: i32,
+    pub english_title: Option<String>,
+    pub romaji_title: Option<String>,
+    pub status: String,
+    pub picture: String,
+    pub updated_at: chrono::NaiveDateTime,
+    pub created_at: chrono::NaiveDateTime,
+    pub relation: Vec<LocalAnimeRelation>,
+    pub watch_status: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
+    pub watch_priority: i32,
+}
+
 pub struct DBAnime {
     pub id: i32,
     pub english_title: Option<String>,
@@ -111,6 +147,20 @@ pub struct DBAnime {
     pub created_at: chrono::NaiveDateTime,
 }
 
+pub struct DBUserAnime {
+    pub id: i32,
+    pub english_title: Option<String>,
+    pub romaji_title: Option<String>,
+    pub picture: String,
+    pub status: String,
+    pub updated_at: chrono::NaiveDateTime,
+    pub created_at: chrono::NaiveDateTime,
+    pub watch_status: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
+    pub watch_priority: i32,
+}
+
 pub async fn get_local_anime_data(
     db: sqlx::Pool<sqlx::MySql>,
     id: i32,
@@ -118,8 +168,8 @@ pub async fn get_local_anime_data(
     let anime = sqlx::query_as!(
         AnimeTableRow,
         r#"
-    SELECT * FROM animes WHERE id = ?
-    "#,
+        SELECT * FROM animes WHERE id = ?
+        "#,
         id
     )
     .fetch_one(&db)
@@ -163,7 +213,7 @@ pub enum ListStatus {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct LocalAnineListResult {
-    pub animes: Vec<LocalAnime>,
+    pub animes: Vec<UserListAnime>,
     pub status: ListStatus,
 }
 
@@ -172,12 +222,12 @@ pub async fn get_local_user_list(
     user: User,
 ) -> Result<LocalAnineListResult, anyhow::Error> {
     let animes = sqlx::query_as!(
-        DBAnime,
+        DBUserAnime,
         r#"
-    SELECT animes.* FROM animes
-    INNER JOIN anime_users ON anime_users.anime_id = animes.id
-    WHERE anime_users.user_id = ?
-    "#,
+        SELECT animes.*, anime_users.status as watch_status, anime_users.watch_priority FROM animes
+        INNER JOIN anime_users ON anime_users.anime_id = animes.id
+        WHERE anime_users.user_id = ?
+        "#,
         user.id
     )
     .fetch_all(&db)
@@ -191,8 +241,6 @@ pub async fn get_local_user_list(
     }
 
     let ids: Vec<i32> = animes.iter().map(|a| a.id).collect();
-
-    let params = (0..ids.len()).map(|_| "?").collect::<Vec<&str>>();
 
     let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
         r#"
@@ -217,7 +265,7 @@ pub async fn get_local_user_list(
 
     let a = query_builder.build_query_as::<LocalAnimeRelation>();
 
-    tracing::info!("Query: {}", a.sql().to_string());
+    // tracing::info!("Query: {}", a.sql().to_string());
     let relations = a.fetch_all(&db).await?;
 
     let mut relations_map: HashMap<i32, Vec<LocalAnimeRelation>> = HashMap::new();
@@ -229,12 +277,12 @@ pub async fn get_local_user_list(
             .push(relation);
     }
 
-    let local_animes: Vec<LocalAnime> = animes
+    let local_animes: Vec<UserListAnime> = animes
         .into_iter()
         .map(|anime| {
             let relations = relations_map.get(&anime.id).cloned().unwrap_or_default();
 
-            LocalAnime {
+            UserListAnime {
                 id: anime.id,
                 english_title: anime.english_title,
                 romaji_title: anime.romaji_title,
@@ -243,6 +291,10 @@ pub async fn get_local_user_list(
                 updated_at: anime.updated_at,
                 created_at: anime.created_at,
                 relation: relations,
+                watch_priority: anime.watch_priority,
+                watch_status: anime.watch_status,
+                season: anime.season,
+                season_year: anime.season_year,
             }
         })
         .collect();
@@ -302,16 +354,10 @@ pub async fn get_mal_user_list(
     let anime = res.json::<MalAnimeListResponse>().await?;
     let paging = anime.paging.clone();
 
-    let anime: Vec<AnimeListItem> = anime
-        .data
-        .into_iter()
-        .filter(|item| item.list_status["status"] != "completed")
-        .collect();
-
-    tracing::info!("Got {} anime from MAL", anime.len());
+    tracing::info!("Got {} anime from MAL", anime.data.len());
 
     Ok(MalAnimeListResponse {
-        data: anime,
+        data: anime.data,
         paging,
     })
 }
@@ -321,7 +367,6 @@ anime{}: Media(idMal: $anime{}, type: ANIME) {
     idMal
     title {
       romaji
-      english
     }
     type
     coverImage {
@@ -330,21 +375,8 @@ anime{}: Media(idMal: $anime{}, type: ANIME) {
     }
     bannerImage
     status
-    episodes
-    nextAiringEpisode {
-      id
-      airingAt
-      episode
-    }
-    airingSchedule {
-      edges {
-        node {
-          id
-          airingAt
-          episode
-        }
-      }
-    }
+    season
+    seasonYear
     relations {
       edges {
         id
@@ -353,30 +385,16 @@ anime{}: Media(idMal: $anime{}, type: ANIME) {
           idMal
           title {
             romaji
-            english
           }
           type
+          season
+          seasonYear
           coverImage {
             large
             color
           }
           bannerImage
           status
-          episodes
-          nextAiringEpisode {
-            id
-            airingAt
-            episode
-          }
-          airingSchedule {
-            edges {
-              node {
-                id
-                airingAt
-                episode
-              }
-            }
-          }
         }
       }
   }
@@ -402,19 +420,29 @@ pub struct AnilistItems {
     pub anime8: Option<AniListAnimeItem>,
     pub anime9: Option<AniListAnimeItem>,
     pub anime10: Option<AniListAnimeItem>,
+    pub anime11: Option<AniListAnimeItem>,
+    pub anime12: Option<AniListAnimeItem>,
+    pub anime13: Option<AniListAnimeItem>,
+    pub anime14: Option<AniListAnimeItem>,
+    pub anime15: Option<AniListAnimeItem>,
+    pub anime16: Option<AniListAnimeItem>,
+    pub anime17: Option<AniListAnimeItem>,
+    pub anime18: Option<AniListAnimeItem>,
+    pub anime19: Option<AniListAnimeItem>,
+    pub anime20: Option<AniListAnimeItem>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AniListAnimeItem {
     pub status: String,
-    pub episodes: Option<i64>,
-    pub next_airing_episode: Option<NextAiringEpisode>,
-    pub airing_schedule: AiringSchedule,
     pub relations: Option<Relations>,
+    pub color: Option<String>,
     pub title: Title,
     pub id_mal: i64,
     pub type_: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
     pub cover_image: CoverImage,
 }
 
@@ -471,12 +499,12 @@ pub struct RelationsEdge {
 pub struct RelationsNode {
     pub status: String,
     pub episodes: Option<i64>,
-    pub next_airing_episode: Option<NextAiringEpisode>,
-    pub airing_schedule: AiringSchedule,
     pub relations: Option<Relations>,
     pub title: Title,
     pub id_mal: Option<i64>,
     pub type_: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
     pub cover_image: CoverImage,
 }
 
@@ -501,11 +529,15 @@ struct GqlQuery {
     variables: Value,
 }
 
+// max this can be is 17, if higher is needed, need to change the queue processor
+// to ensure it can grab the data from the query response
+pub const MAX_ANILIST_PER_QUERY: usize = 17;
+
 fn generate_gql_query(ids: Vec<i32>) -> GqlQuery {
     let mut ids = ids;
-    if ids.len() > 10 {
+    if ids.len() > MAX_ANILIST_PER_QUERY {
         tracing::error!("Too many ids: {}", ids.len());
-        ids.truncate(10);
+        ids.truncate(MAX_ANILIST_PER_QUERY);
     }
 
     let mut query = "query media(".to_owned();
@@ -527,8 +559,6 @@ fn generate_gql_query(ids: Vec<i32>) -> GqlQuery {
     }
 
     query.push('}');
-
-    tracing::info!("Query: {}", query);
 
     GqlQuery { query, variables }
 }
@@ -575,12 +605,18 @@ pub async fn get_animes_from_anilist(reqwest: Client, ids: Vec<i32>) -> AniListR
     let retry_after = get_header_i32(&res, "retry-after".to_string(), -1);
 
     let text = res.text().await.unwrap();
-    tracing::error!("json: {}", text);
-
     let anime: Result<AnilistResponse, serde_json::Error> = serde_json::from_str(&text);
+    let anime = match anime {
+        Ok(json) => Ok(json),
+        Err(e) => {
+            tracing::error!("Response: {:?}", text);
+            tracing::error!("Failed to parse Anilist response: {}", e);
+            Err(anyhow::Error::new(e))
+        }
+    };
 
     AniListResult {
-        response: anime.map_err(anyhow::Error::new),
+        response: anime,
         rate_limit_current,
         rate_limit_remaining,
         rate_limit_reset,

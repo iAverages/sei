@@ -13,6 +13,7 @@ import { createUser } from "~/components/auth";
 import { createMutation, createQuery } from "@tanstack/solid-query";
 import { Button } from "~/components/ui/button";
 import { Anime, AnimeList, ListStatus, useAnimeList } from "~/hooks/useAnimeList";
+import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "~/components/ui/accordion";
 
 const AnimeCardComp = (props: { anime: AnimeList; disabled?: boolean }) => (
     <div
@@ -124,33 +125,59 @@ export default function Home(props: RouteSectionProps) {
     const user = createUser();
     const anime = useAnimeList();
 
-    const featuredAnime = createMemo(() => {
+    const filteredAnimes = createMemo(() => {
+        if (!anime.data) {
+            return {};
+        }
+        const d = new Date();
+        const utc = d.getTime() + d.getTimezoneOffset() * 60000;
+        const nd = new Date(utc + 3600000 * 9);
+        const todayJp = new Date(nd).toLocaleString("en-US", { weekday: "long" }).toLowerCase();
+        const today = new Date().toLocaleString("en-US", { weekday: "long" }).toLowerCase();
+        console.log("today", today, todayJp);
+
+        // If the status is this, consider it watched
+        const watchedStatuses = ["COMPLETED"];
+        const unwatched = anime.data?.animes.filter(
+            (a) => !watchedStatuses.includes(a.watch_status) && a.status === "FINISHED"
+        );
+        const watchedAnime = anime.data?.animes.filter((a) => watchedStatuses.includes(a.watch_status)) ?? [];
+
+        const watching = anime.data?.animes.filter((a) => a.watch_status === "WATCHING") ?? [];
+
+        const releasingSequals = [];
+        const upcomingSequals = [];
+        const hasUpcomingSequalsNotWatchedPrequal = [];
+
+        for (const a of anime.data.animes) {
+            for (const r of a.relation) {
+                if (r.relation === "SEQUEL" && r.status === "RELEASING" && !watchedAnime.find((wa) => wa.id === r.id)) {
+                    releasingSequals.push(r);
+                }
+                if (r.relation === "SEQUEL" && r.status === "NOT_YET_RELEASED") {
+                    upcomingSequals.push(r);
+                }
+
+                if (a.status !== "FINISHED" && r.relation === "PREQUEL" && !watchedAnime.find((wa) => wa.id === r.id)) {
+                    hasUpcomingSequalsNotWatchedPrequal.push(r);
+                    hasUpcomingSequalsNotWatchedPrequal.push(a);
+                }
+            }
+        }
+
         return {
-            releasingToday: [],
-            releasingUnwatched: [],
+            releasingSequals,
+            upcomingSequals,
+            hasUpcomingSequalsNotWatchedPrequal,
         };
-        // const d = new Date();
-        // const utc = d.getTime() + d.getTimezoneOffset() * 60000;
-        // const nd = new Date(utc + 3600000 * 9);
-        // const todayJp = new Date(nd).toLocaleString("en-US", { weekday: "long" }).toLowerCase();
-        // const today = new Date().toLocaleString("en-US", { weekday: "long" }).toLowerCase();
-        // console.log("today", today, todayJp);
+    });
 
-        // const releasingToday = anime.data?.animes.filter(
-        //     (a) => isBroadcastWithin12Hours(a) && a.node.status === "currently_airing"
-        // );
-        // const releasingUnwatched = anime.data?.animes.filter((a) => {
-        //     return a.list_status.num_episodes_watched < a.node.num_episodes && a.node.status === "currently_airing";
-        // });
-
-        // return {
-        //     releasingToday,
-        //     releasingUnwatched,
-        // };
+    createEffect(() => {
+        console.log("featured", filteredAnimes());
     });
 
     const releasedAnime = createMemo(() => {
-        const released = anime.data?.animes.filter((a) => a.status === "FINISHED");
+        const released = anime.data?.animes.filter((a) => a.status === "FINISHED" && a.watch_status !== "COMPLETED");
         return released;
     });
 
@@ -219,12 +246,35 @@ export default function Home(props: RouteSectionProps) {
                 <Show when={anime.data.status === ListStatus.Updating}>
                     <div>We are updating your list.</div>
                 </Show>
-                <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+
+                <Accordion multiple={false} collapsible>
+                    <For each={Object.keys(filteredAnimes())}>
+                        {(key) => (
+                            <AccordionItem value={key}>
+                                <AccordionTrigger>
+                                    <h1>{key}</h1>
+                                </AccordionTrigger>
+
+                                <AccordionContent>
+                                    <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                                        <For each={filteredAnimes()[key]}>
+                                            {(anime) => <AnimeCardComp anime={anime} />}
+                                        </For>
+                                    </div>
+                                </AccordionContent>
+                            </AccordionItem>
+                        )}
+                    </For>
+                </Accordion>
+                {/* <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
                     <For each={featuredAnime().releasingToday}>{(anime) => <AnimeCardComp anime={anime} />}</For>
                 </div>
                 <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
                     <For each={featuredAnime().releasingUnwatched}>{(anime) => <AnimeCardComp anime={anime} />}</For>
                 </div>
+                <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                    <For each={featuredAnime().gettingNewSeason}>{(anime) => <AnimeCardComp anime={anime} />}</For>
+                </div> */}
 
                 <div class={"w-full h-1 bg-red-500"}></div>
 

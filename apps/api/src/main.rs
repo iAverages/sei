@@ -1,4 +1,5 @@
 mod anime;
+mod background;
 mod helpers;
 mod importer;
 mod middleware;
@@ -52,7 +53,8 @@ fn create_oauth_client(api_url: String, client_id: String, client_secret: String
 #[derive(Debug, Clone)]
 struct ImportQueueItem {
     anime_id: i32,
-    user_id: String,
+    user_id: Option<String>,
+    anime_watch_status: Option<String>,
 }
 
 type ImportQueue = Queue<ImportQueueItem>;
@@ -150,7 +152,8 @@ async fn main() {
         .layer(cors)
         .with_state(state.clone());
 
-    tokio::spawn(async move { queue::import_queue_worker(state).await });
+    background::start_background_job(state.clone());
+    queue::import_queue_worker(state);
 
     let address = SocketAddr::from(([127, 0, 0, 1], 3001));
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();

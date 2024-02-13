@@ -1,16 +1,58 @@
 use std::time::Duration;
 
+use sqlx::{MySql, Pool};
 use tokio::time::timeout;
 
-use crate::{anime, AppState, ImportQueueItem};
+use crate::{
+    anime::{self, CoverImage, RelationsEdge, Title, MAX_ANILIST_PER_QUERY},
+    AppState, ImportQueueItem,
+};
 
-pub async fn import_queue_worker(state: AppState) {
+#[derive(Debug, Clone)]
+pub struct InsertAnime {
+    pub status: String,
+    pub title: Title,
+    pub id_mal: i64,
+    pub type_: String,
+    pub cover_image: CoverImage,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
+}
+
+pub async fn insert_anime(db: &Pool<MySql>, anime: InsertAnime) -> Result<(), sqlx::Error> {
+    sqlx::query!(
+                r#"
+                INSERT INTO animes (id, romaji_title, english_title, status, picture, season, season_year, updated_at)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+                ON DUPLICATE KEY UPDATE romaji_title = ?, english_title = ?, status = ?, picture = ?, season = ?, season_year = ?, updated_at = ?
+                "#,
+                anime.id_mal,
+                anime.title.romaji,
+                anime.title.english,
+                anime.status,
+                anime.cover_image.large,
+                anime.season,
+                anime.season_year,
+                chrono::Utc::now(),
+                anime.title.romaji,
+                anime.title.english,
+                anime.status,
+                anime.cover_image.large,
+                anime.season,
+                anime.season_year,
+                chrono::Utc::now(),
+).execute(db).await?;
+
+    Ok(())
+}
+
+pub fn import_queue_worker(state: AppState) {
     tokio::spawn(async move {
-        tracing::info!("Starting import queue worker");
+        tracing::info!("Starting import queue worker...");
 
         loop {
             let mut ids = vec![];
-            for _ in 0..10 {
+            for _ in 0..MAX_ANILIST_PER_QUERY {
                 let id = timeout(Duration::from_millis(500), state.import_queue.pop()).await;
 
                 if let Ok(id) = id {
@@ -44,13 +86,18 @@ pub async fn import_queue_worker(state: AppState) {
                     let updated_at = local_data.updated_at;
                     let diff = now - updated_at;
 
-                    if diff.num_hours() < 12 {
+                    if diff.num_hours() < 1 {
                         tracing::info!(
-                            "Anime {} was updated less than 12 hours ago, skipping",
+                            "Anime {} was updated less than 1 hour ago, skipping",
                             id.anime_id
                         );
                         continue;
                     }
+                    tracing::info!(
+                        "Anime {} was last updated more than 1 hour ago, reimporting",
+                        id.anime_id
+                    );
+                    import_ids.push(id.anime_id);
                 } else {
                     tracing::info!("Anime {} not found in local database", id.anime_id);
                     import_ids.push(id.anime_id);
@@ -59,6 +106,9 @@ pub async fn import_queue_worker(state: AppState) {
 
             if import_ids.is_empty() {
                 for item in ids.iter() {
+                    if item.user_id.is_none() {
+                        continue;
+                    }
                     sqlx::query!(
                         r#"
                         INSERT INTO anime_users (anime_id, user_id)
@@ -102,7 +152,8 @@ pub async fn import_queue_worker(state: AppState) {
                     import_ids.iter().for_each(|id| {
                         state.import_queue.push(ImportQueueItem {
                             anime_id: *id,
-                            user_id: "".to_string(),
+                            user_id: None,
+                            anime_watch_status: None,
                         })
                     });
                     continue;
@@ -121,43 +172,55 @@ pub async fn import_queue_worker(state: AppState) {
                     7 => ani_result.data.anime8.as_ref(),
                     8 => ani_result.data.anime9.as_ref(),
                     9 => ani_result.data.anime10.as_ref(),
+                    10 => ani_result.data.anime11.as_ref(),
+                    11 => ani_result.data.anime12.as_ref(),
+                    12 => ani_result.data.anime13.as_ref(),
+                    13 => ani_result.data.anime14.as_ref(),
+                    14 => ani_result.data.anime15.as_ref(),
+                    15 => ani_result.data.anime16.as_ref(),
+                    16 => ani_result.data.anime17.as_ref(),
+                    17 => ani_result.data.anime18.as_ref(),
+                    18 => ani_result.data.anime19.as_ref(),
+                    19 => ani_result.data.anime20.as_ref(),
                     _ => None,
                 };
 
                 if anime.is_none() {
-                    tracing::warn!("Anime {} not found in response", import_ids[i]);
+                    tracing::warn!(
+                        "Anime {} not found in response, readding to queue...",
+                        import_ids[i]
+                    );
+                    state.import_queue.push(ImportQueueItem {
+                        anime_id: import_ids[i],
+                        user_id: None,
+                        anime_watch_status: None,
+                    });
                     continue;
                 }
 
                 let anime = anime.unwrap();
 
-                let insert_result = sqlx::query!(
-                r#"
-                INSERT INTO animes (id, romaji_title, english_title, status, picture, updated_at)
-                VALUES (?, ?, ?, ?, ?, ?)
-                ON DUPLICATE KEY UPDATE romaji_title = ?, english_title = ?, status = ?, picture = ?, updated_at = ?
-                "#,
-                anime.id_mal,
-                anime.title.romaji,
-                anime.title.english,
-                anime.status,
-                anime.cover_image.large,
-                chrono::Utc::now(),
-                anime.title.romaji,
-                anime.title.english,
-                anime.status,
-                anime.cover_image.large,
-                chrono::Utc::now(),
-            )
-            .execute(&state.db)
-            .await;
+                let insert_result = insert_anime(
+                    &state.db,
+                    InsertAnime {
+                        cover_image: anime.cover_image.clone(),
+                        id_mal: anime.id_mal,
+                        status: anime.status.clone(),
+                        title: anime.title.clone(),
+                        type_: anime.type_.clone(),
+                        season: anime.season.clone(),
+                        season_year: anime.season_year,
+                    },
+                )
+                .await;
 
                 if let Err(e) = insert_result {
                     tracing::error!("Failed to insert anime: {}", e);
                     import_ids.iter().for_each(|id| {
                         state.import_queue.push(ImportQueueItem {
                             anime_id: *id,
-                            user_id: "".to_string(),
+                            user_id: None,
+                            anime_watch_status: None,
                         })
                     });
                     continue;
@@ -169,30 +232,35 @@ pub async fn import_queue_worker(state: AppState) {
                 }
                 let relation = relation.unwrap();
 
-                for related in relation.edges.into_iter() {
-                    let insert_result = sqlx::query!(
-                        r#"
-                        INSERT INTO animes (id, romaji_title, english_title, status, picture, updated_at)
-                        VALUES (?, ?, ?, ?, ?, ?)
-                        ON DUPLICATE KEY UPDATE romaji_title = ?, english_title = ?, status = ?, picture = ?, updated_at = ?
-                            "#,
-                            related.node.id_mal,
-                            related.node.title.romaji,
-                            related.node.title.english,
-                            related.node.status,
-                            related.node.cover_image.large,
-                            chrono::Utc::now(),
-                            related.node.title.romaji,
-                            related.node.title.english,
-                            related.node.status,
-                            related.node.cover_image.large,
-                            chrono::Utc::now(),
+                let relation: Vec<RelationsEdge> = relation
+                    .edges
+                    .into_iter()
+                    .filter(|r| {
+                        r.relation_type == "PREQUEL"
+                            || r.relation_type == "SEQUEL"
+                            || r.relation_type == "SIDE_STORY"
+                    })
+                    .filter(|r| r.node.id_mal.is_some())
+                    .collect();
+
+                for related in relation {
+                    let insert_result = insert_anime(
+                        &state.db,
+                        InsertAnime {
+                            cover_image: related.node.cover_image.clone(),
+                            id_mal: related.node.id_mal.unwrap(), // Safe to unwrap, we filter out None above
+                            status: related.node.status.clone(),
+                            title: related.node.title.clone(),
+                            type_: related.node.type_.clone(),
+                            season: related.node.season.clone(),
+                            season_year: related.node.season_year,
+                        },
                     )
-                    .execute(&state.db)
                     .await;
 
                     if let Err(e) = insert_result {
                         tracing::error!("Failed to insert related anime: {}", e);
+                        continue;
                     }
 
                     let relation_isert_result = sqlx::query!(
@@ -212,20 +280,24 @@ pub async fn import_queue_worker(state: AppState) {
                         .await;
 
                     if let Err(e) = relation_isert_result {
-                        tracing::error!("Failed to insert relation: {}", e);
+                        tracing::error!("Failed to insert relation link: {}", e);
                     }
                 }
             }
 
             for item in ids.iter() {
+                if item.user_id.is_none() {
+                    continue;
+                }
                 sqlx::query!(
                     r#"
-                    INSERT INTO anime_users (anime_id, user_id)
+                    INSERT INTO anime_users (anime_id, user_id, status)
                     VALUES
-                        (?, ?)
+                        (?, ?, ?)
                     "#,
                     item.anime_id,
-                    item.user_id
+                    item.user_id,
+                    item.anime_watch_status
                 )
                 .execute(&state.db)
                 .await

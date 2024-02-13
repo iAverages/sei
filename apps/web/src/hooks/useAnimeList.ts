@@ -1,38 +1,39 @@
 import { createQuery } from "@tanstack/solid-query";
 
-export interface AnimeList {
+export type BaseAnime = {
     created_at: string;
     english_title: string;
     id: number;
     picture: string;
-    relation: any[];
+    relation: RelatedAnime[];
+    romaji_title: string;
+    status: string;
+    updated_at: string;
+};
+
+export type WatchSatus = string;
+
+export type AnimeList = BaseAnime & {
+    watch_status: WatchSatus;
+    watch_priority: number;
+};
+
+export interface Anime {
+    created_at: string;
+    english_title?: string;
+    id: number;
+    picture: string;
+    relation: RelatedAnime[];
     romaji_title: string;
     status: string;
     updated_at: string;
 }
 
-export interface Anime {
-    id: number;
-    title: string;
-    main_picture: {
-        medium: string;
-        large: string;
-    };
-    status: string;
-    num_episodes: number;
-    broadcast?: {
-        day_of_the_week: string;
-        start_time: string;
-    };
-}
-
-export interface AnimeListStatus {
-    status: string;
-    score: number;
-    num_episodes_watched: number;
-    is_rewatching: boolean;
-    updated_at: string;
-}
+export type RelatedAnime = Anime & {
+    base_anime_id: number;
+    related_anime_id: number;
+    relation: string;
+};
 
 export const ListStatus = {
     Importing: "importing",

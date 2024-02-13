@@ -1,10 +1,6 @@
 // This is your Prisma schema file,
 // learn more about it in the docs: https://pris.ly/d/prisma-schema
 
-generator client {
-  provider = "prisma-client-js"
-}
-
 datasource db {
   provider = "mysql"
   url      = env("DATABASE_URL")
@@ -29,6 +25,8 @@ enum Status {
   WATCHING
   COMPLETED
   PLAN_TO_WATCH
+  DROPPED
+  ON_HOLD
 }
 
 enum AiringStatus {
@@ -42,12 +40,15 @@ enum AiringStatus {
 model animes {
   id            Int          @unique
   english_title String?
-  romaji_title  String       @default("")
+  romaji_title  String
   status        AiringStatus
 
   picture    String
   created_at DateTime @default(now())
   updated_at DateTime @default(now())
+
+  season      String?
+  season_year Int?
 
   related_animes anime_relations[] @relation("related_anime")
   base_animes    anime_relations[] @relation("base_anime")
@@ -72,9 +73,9 @@ enum Relation {
 }
 
 model anime_relations {
-  base_anime       animes @relation("base_anime", fields: [base_anime_id], references: [id])
+  base_anime       animes @relation("base_anime", fields: [base_anime_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   base_anime_id    Int
-  related_anime    animes @relation("related_anime", fields: [related_anime_id], references: [id])
+  related_anime    animes @relation("related_anime", fields: [related_anime_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
   related_anime_id Int
 
   relation Relation

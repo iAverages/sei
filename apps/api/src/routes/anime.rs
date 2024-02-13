@@ -6,7 +6,7 @@ use serde_json::json;
 use sqlx::{query_as, MySql, QueryBuilder};
 
 use crate::{
-    anime::{self, LocalAnineListResult},
+    anime::{self, ListStatus, LocalAnineListResult},
     helpers::json_response,
     models::user::User,
     types::CurrentUser,
@@ -40,10 +40,17 @@ pub async fn get_anime(
 
     let local_animes = local_animes.expect("Failed to get local animes");
     let mal_animes = mal_animes.expect("Failed to get mal animes");
+    let mut status = ListStatus::Imported;
 
     if mal_animes.data.len() != local_animes.animes.len() {
         tracing::info!("Mal animes: {:?}", mal_animes.data.len());
         tracing::info!("Local animes: {:?}", local_animes.animes.len());
+
+        if local_animes.animes.is_empty() {
+            status = ListStatus::Importing;
+        } else {
+            status = ListStatus::Updating;
+        }
 
         mal_animes.data.iter().for_each(|anime| {
             if !local_animes
@@ -53,7 +60,8 @@ pub async fn get_anime(
             {
                 state.import_queue.push(ImportQueueItem {
                     anime_id: anime.node.id,
-                    user_id: full_user.id.clone(),
+                    user_id: Some(full_user.id.clone()),
+                    anime_watch_status: Some(anime.list_status.status.clone()),
                 });
             }
         });
@@ -90,7 +98,7 @@ pub async fn get_anime(
 
     let res = LocalAnineListResult {
         animes: ordered_animes,
-        status: anime::ListStatus::Updating,
+        status,
     };
 
     json_response!(StatusCode::OK, res)
