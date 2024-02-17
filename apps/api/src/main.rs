@@ -14,6 +14,7 @@ use std::{
     sync::Arc,
 };
 
+use anime::AnimeRelationshipType;
 use axum::{
     extract::FromRef,
     http::{HeaderValue, Method, StatusCode},
@@ -51,11 +52,32 @@ fn create_oauth_client(api_url: String, client_id: String, client_secret: String
 }
 
 #[derive(Debug, Clone)]
-struct ImportQueueItem {
-    anime_id: i32,
-    user_id: Option<String>,
-    anime_watch_status: Option<String>,
+pub enum ImportQueueItem {
+    UserAnime {
+        times_in_queue: i32,
+        anime_id: i32,
+        user_id: String,
+        anime_watch_status: String,
+    },
+    Anime {
+        times_in_queue: i32,
+        anime_id: i32,
+    },
+    Relationship {
+        times_in_queue: i32,
+        anime_id: i32,
+        related_anime_id: i32,
+        related_anime_type: String,
+    },
 }
+
+// // struct ImportQueueItem {
+// //     anime_id: i32,
+// //     user_id: Option<String>,
+// //     anime_watch_status: Option<String>,
+// //     related_anime_id: Option<i32>,
+// //     related_anime_type: Option<String>,
+// // }
 
 type ImportQueue = Queue<ImportQueueItem>;
 
@@ -135,9 +157,10 @@ async fn main() {
             "/api/v1",
             Router::new()
                 .route("/auth/me", get(routes::user::get_user))
-                .route("/anime", get(routes::anime::get_anime))
+                .route("/anime", get(routes::anime::get_anime_list))
                 .route("/order", post(routes::anime::update_list_order))
                 .route_layer(from_fn_with_state(state.clone(), guard))
+                .route("/anime/:id", get(routes::anime::get_anime))
                 .with_state(state.clone()),
         )
         .route(

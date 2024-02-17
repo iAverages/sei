@@ -23,10 +23,9 @@ pub fn start_background_job(state: AppState) {
             };
 
             for anime in needs_revalidating {
-                import_queue.push(ImportQueueItem {
+                import_queue.push(ImportQueueItem::Anime {
                     anime_id: anime.id,
-                    user_id: None,
-                    anime_watch_status: None,
+                    times_in_queue: 0,
                 });
             }
 

@@ -10,12 +10,22 @@ import {
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { RouteSectionProps } from "@solidjs/router";
 import { createUser } from "~/components/auth";
-import { createMutation, createQuery } from "@tanstack/solid-query";
+import { createMutation } from "@tanstack/solid-query";
 import { Button } from "~/components/ui/button";
-import { Anime, AnimeList, ListStatus, useAnimeList } from "~/hooks/useAnimeList";
+import { AnimeList, ListStatus, RelatedAnime, useAnimeList } from "~/hooks/useAnimeList";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "~/components/ui/accordion";
+import { Card, CardHeader, CardTitle } from "~/components/ui/card";
+import { Badge } from "~/components/ui/badge";
 
-const AnimeCardComp = (props: { anime: AnimeList; disabled?: boolean }) => (
+type AnimeCardProps = {
+    grouped?: boolean;
+    anime: AnimeList | RelatedAnime;
+    getAnimeUserList: (id: number) => AnimeList | undefined;
+    disabled?: boolean;
+    showOverlayInfo?: boolean;
+};
+
+const InnerAnimeCard = (props: AnimeCardProps) => (
     <div
         class={"transition-transform flex flex-col items-center text-center"}
         classList={{
@@ -27,7 +37,36 @@ const AnimeCardComp = (props: { anime: AnimeList; disabled?: boolean }) => (
     </div>
 );
 
-const AnimeCard = (props: { anime: AnimeList; disabled?: boolean }) => {
+const AnimeCardComp = (props: AnimeCardProps) => {
+    console.log("props", props.anime);
+    return (
+        <div class={"flex relative items-center justify-center w-full"}>
+            <Show when={props.showOverlayInfo}>
+                <div class={"absolute top-2 mr-2 flex w-full justify-end"}>
+                    <Show
+                        when={
+                            typeof props.anime.relation !== "string" &&
+                            props.anime.relation.filter((r) => isStatus(r, ["RELEASING", "NOT_YET_RELEASED"])).length >
+                                0
+                        }>
+                        <Badge>New Season Soon</Badge>
+                    </Show>
+                    <Show when={!props.getAnimeUserList(props.anime.id)}>
+                        <Badge>Not In List</Badge>
+                    </Show>
+                </div>
+            </Show>
+            <InnerAnimeCard {...props} />
+            <Show when={props.grouped}>
+                <For each={props.anime.relation}>
+                    {(related) => <InnerAnimeCard anime={related} getAnimeUserList={props.getAnimeUserList} />}
+                </For>
+            </Show>
+        </div>
+    );
+};
+
+const AnimeCard = (props: AnimeCardProps) => {
     const sortable = createSortable(props.anime.id);
     const [state] = useDragDropContext();
 
@@ -39,7 +78,7 @@ const AnimeCard = (props: { anime: AnimeList; disabled?: boolean }) => {
                 "opacity-25 duration-250": sortable.isActiveDraggable || props.disabled,
                 "transition-transform": !!state.active.draggable,
             }}>
-            <AnimeCardComp anime={props.anime} />
+            <AnimeCardComp grouped={false} {...props} />
         </div>
     );
 };
@@ -120,6 +159,28 @@ function isBroadcastWithin12Hours(item: AnimeList) {
     // // Check if the difference is within ±12 hours
     // return Math.abs(diffHours) <= 12;
 }
+const c = () => {
+    return [] as (AnimeList | RelatedAnime)[];
+};
+
+const getS1Anime = (anime: AnimeList | RelatedAnime) => {
+    let base: AnimeList | RelatedAnime = anime;
+    for (const r of anime.relation) {
+        if (r.relation === "PREQUEL") {
+            base = getS1Anime(r);
+        }
+    }
+
+    if (base?.id === anime.id) {
+        return anime;
+    }
+
+    return base;
+};
+
+const isStatus = (anime: AnimeList | RelatedAnime, status: string[]) => {
+    return status.includes(anime.status);
+};
 
 export default function Home(props: RouteSectionProps) {
     const user = createUser();
@@ -136,45 +197,107 @@ export default function Home(props: RouteSectionProps) {
         const today = new Date().toLocaleString("en-US", { weekday: "long" }).toLowerCase();
         console.log("today", today, todayJp);
 
-        // If the status is this, consider it watched
-        const watchedStatuses = ["COMPLETED"];
-        const unwatched = anime.data?.animes.filter(
-            (a) => !watchedStatuses.includes(a.watch_status) && a.status === "FINISHED"
-        );
-        const watchedAnime = anime.data?.animes.filter((a) => watchedStatuses.includes(a.watch_status)) ?? [];
+        const watchingReleasing = c();
+        const watchingReleased = c();
+        const notWatchingReleasing = c();
+        const hasSequel = c();
+        const hasWatchedPrequal = c();
+        const hasNotWatchedPrequal = c();
+        const upcomingSequals = c();
+        const sequalNotInList = c();
 
-        const watching = anime.data?.animes.filter((a) => a.watch_status === "WATCHING") ?? [];
-
-        const releasingSequals = [];
-        const upcomingSequals = [];
-        const hasUpcomingSequalsNotWatchedPrequal = [];
-
-        for (const a of anime.data.animes) {
+        const seasonOnes = anime.data.animes.filter((a) => {
             for (const r of a.relation) {
-                if (r.relation === "SEQUEL" && r.status === "RELEASING" && !watchedAnime.find((wa) => wa.id === r.id)) {
-                    releasingSequals.push(r);
+                if (r.relation === "PREQUEL") {
+                    return false;
                 }
-                if (r.relation === "SEQUEL" && r.status === "NOT_YET_RELEASED") {
-                    upcomingSequals.push(r);
+            }
+
+            return true;
+        });
+
+        for (const a of seasonOnes) {
+            if (a.watch_status !== "COMPLETED" && a.status === "FINISHED") {
+                watchingReleased.push(a);
+            }
+
+            if (a.watch_status !== "COMPLETED" && a.status === "RELEASING") {
+                watchingReleasing.push(a);
+            }
+
+            let index = 0;
+            for (const r of a.relation) {
+                index++;
+                if (r.relation === "SEQUEL") {
+                    hasSequel.push(a);
                 }
 
-                if (a.status !== "FINISHED" && r.relation === "PREQUEL" && !watchedAnime.find((wa) => wa.id === r.id)) {
-                    hasUpcomingSequalsNotWatchedPrequal.push(r);
-                    hasUpcomingSequalsNotWatchedPrequal.push(a);
+                const userList = anime.data.animes.find((a) => a.id === r.id);
+
+                if (!userList) {
+                    // if (!userList && isStatus(r, ["RELEASING", "NOT_YET_RELEASED"])) {
+                    sequalNotInList.push(r);
+                }
+
+                if (a.watch_status === "COMPLETED" && userList?.watch_status !== "COMPLETED") {
+                    hasWatchedPrequal.push(r);
+                }
+
+                const prev = a.relation[index - 1];
+                const prevList = anime.data.animes.find((a) => a.id === prev?.id);
+                if (prev.romaji_title.startsWith("Date A Live")) {
+                    console.log("prev", prev);
+                }
+
+                if (
+                    isStatus(r, ["NOT_YET_RELEASED", "RELEASING"]) &&
+                    a.watch_status !== "COMPLETED" &&
+                    (prevList?.watch_status !== "COMPLETED" || prevList === undefined)
+                ) {
+                    hasNotWatchedPrequal.push(prev);
+                }
+
+                if (
+                    r.relation === "SEQUEL" &&
+                    (r.status === "RELEASING" || r.status === "NOT_YET_RELEASED") &&
+                    userList?.watch_status !== "WATCHING"
+                ) {
+                    if (r.romaji_title.startsWith("MASHLE")) {
+                        console.log("r", userList);
+                    }
+                    upcomingSequals.push(r);
                 }
             }
         }
 
+        console.log("hasNotWatchedPrequal", hasNotWatchedPrequal);
+
         return {
-            releasingSequals,
+            watchingReleasing,
+            watchingReleased,
+            notWatchingReleasing,
+            hasSequel,
+            hasWatchedPrequal,
+            hasNotWatchedPrequal: hasNotWatchedPrequal,
+            seasonOnes,
             upcomingSequals,
-            hasUpcomingSequalsNotWatchedPrequal,
+            sequalNotInList,
+            // watching,
+            // releasedIncomplete,
+            // releasingSequals,
+            // upcomingSequals,
+            // hasUpcomingSequalsNotWatchedPrequal,
+            // firstSeasonAnimes,
+            // seasonsWithMultipleSeasons: animeWithMultipleSeasons,
+            // unwatchedWithReleasingSequals,
+            // hasSecondSeasonInListWithoutPrequal,
+            // upcomingSequalsWithoutPrequalWatched,
         };
     });
 
-    createEffect(() => {
-        console.log("featured", filteredAnimes());
-    });
+    // createEffect(() => {
+    //     console.log("featured", filteredAnimes());
+    // });
 
     const releasedAnime = createMemo(() => {
         const released = anime.data?.animes.filter((a) => a.status === "FINISHED" && a.watch_status !== "COMPLETED");
@@ -202,11 +325,10 @@ export default function Home(props: RouteSectionProps) {
         },
     }));
 
-    const [items, setItems] = createSignal(releasedAnime());
+    const [items, setItems] = createSignal(filteredAnimes().watchingReleased);
 
     createEffect(() => {
-        console.log("anime.data", anime.data);
-        setItems(releasedAnime());
+        setItems(filteredAnimes().watchingReleased);
     });
 
     const ids = () => items().map((item) => item.id);
@@ -224,6 +346,12 @@ export default function Home(props: RouteSectionProps) {
         }
     };
 
+    const getAnimeUserList = (id: number) => {
+        const a = anime.data?.animes.find((a) => a.id === id);
+        console.log("a", a);
+        return a;
+    };
+
     return (
         <div class={"p-6 flex flex-col gap-3"}>
             <Button
@@ -239,7 +367,11 @@ export default function Home(props: RouteSectionProps) {
             <Show when={anime.data}>
                 <div>{anime.data.status}</div>
                 <Show when={anime.data.status === ListStatus.Importing}>
-                    <div>We are importing your list</div>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>We are importing your list</CardTitle>
+                        </CardHeader>
+                    </Card>
                 </Show>
 
                 {/* <Show when={anime.data.status !== ListStatus.Importing}> */}
@@ -248,17 +380,65 @@ export default function Home(props: RouteSectionProps) {
                 </Show>
 
                 <Accordion multiple={false} collapsible>
+                    {/* <AccordionItem value={"a"}>
+                        <AccordionTrigger>
+                            <h1>a ({filteredAnimes().a.length})</h1>
+                        </AccordionTrigger>
+
+                        <AccordionContent>
+                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                                <For each={filteredAnimes().a}>
+                                    {(anime) => <AnimeCardComp grouped anime={anime} />}
+                                </For>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem> */}
+                    {/* <AccordionItem value={"not-watched-prequel"}>
+                        <AccordionTrigger>
+                            <h1>not-watched-prequel ({filteredAnimes().hasNotWatchedPrequal.length})</h1>
+                        </AccordionTrigger>
+
+                        <AccordionContent>
+                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                                <For each={filteredAnimes().hasNotWatchedPrequal}>
+                                    {(anime) => <AnimeCardComp anime={anime} grouped />}
+                                </For>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem>
+
+                    <AccordionItem value={"s ones"}>
+                        <AccordionTrigger>
+                            <h1>s ones ({filteredAnimes().seasonOnes.length})</h1>
+                        </AccordionTrigger>
+
+                        <AccordionContent>
+                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                                <For each={filteredAnimes().seasonOnes}>
+                                    {(anime) => <AnimeCardComp anime={anime} grouped />}
+                                </For>
+                            </div>
+                        </AccordionContent>
+                    </AccordionItem> */}
                     <For each={Object.keys(filteredAnimes())}>
                         {(key) => (
                             <AccordionItem value={key}>
                                 <AccordionTrigger>
-                                    <h1>{key}</h1>
+                                    <h1>
+                                        {key} ({filteredAnimes()[key].length})
+                                    </h1>
                                 </AccordionTrigger>
 
                                 <AccordionContent>
                                     <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
                                         <For each={filteredAnimes()[key]}>
-                                            {(anime) => <AnimeCardComp anime={anime} />}
+                                            {(anime) => (
+                                                <AnimeCardComp
+                                                    anime={anime}
+                                                    getAnimeUserList={getAnimeUserList}
+                                                    showOverlayInfo
+                                                />
+                                            )}
                                         </For>
                                     </div>
                                 </AccordionContent>
@@ -284,12 +464,24 @@ export default function Home(props: RouteSectionProps) {
                     <SortableProvider ids={ids()}>
                         <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
                             <For each={items()}>
-                                {(anime) => <AnimeCard anime={anime} disabled={updateListOrder.isPending} />}
+                                {(anime) => (
+                                    <AnimeCard
+                                        anime={anime}
+                                        disabled={updateListOrder.isPending}
+                                        showOverlayInfo
+                                        getAnimeUserList={getAnimeUserList}
+                                    />
+                                )}
                             </For>
                         </div>
                     </SortableProvider>
                     <DragOverlay class={"transition-transform"}>
-                        {(draggable) => <AnimeCardComp anime={items().find((a) => a.id === draggable.id)} />}
+                        {(draggable) => (
+                            <AnimeCardComp
+                                anime={items().find((a) => a.id === draggable.id)}
+                                getAnimeUserList={getAnimeUserList}
+                            />
+                        )}
                     </DragOverlay>
                 </DragDropProvider>
             </Show>

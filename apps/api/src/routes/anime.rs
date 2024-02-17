@@ -1,16 +1,23 @@
 use std::sync::Arc;
 
-use axum::{extract::State, http::StatusCode, response::IntoResponse, Extension, Json};
+use axum::{
+    extract::{Path, State},
+    http::StatusCode,
+    response::IntoResponse,
+    Extension, Json,
+};
 use serde::Serialize;
 use serde_json::json;
 use sqlx::{query_as, MySql, QueryBuilder};
 
 use crate::{
-    anime::{self, ListStatus, LocalAnineListResult},
+    anime::{
+        self, get_anime_with_relations, get_local_anime_data, ListStatus, LocalAnineListResult,
+    },
     helpers::json_response,
     models::user::User,
     types::CurrentUser,
-    AppState, ImportQueueItem,
+    AppError, AppState, ImportQueueItem,
 };
 
 struct AnimeIdResponse {
@@ -18,7 +25,7 @@ struct AnimeIdResponse {
 }
 
 #[axum::debug_handler]
-pub async fn get_anime(
+pub async fn get_anime_list(
     State(state): State<AppState>,
     Extension(user): Extension<CurrentUser>,
 ) -> impl IntoResponse {
@@ -58,10 +65,11 @@ pub async fn get_anime(
                 .iter()
                 .any(|local| local.id == anime.node.id)
             {
-                state.import_queue.push(ImportQueueItem {
+                state.import_queue.push(ImportQueueItem::UserAnime {
                     anime_id: anime.node.id,
-                    user_id: Some(full_user.id.clone()),
-                    anime_watch_status: Some(anime.list_status.status.clone()),
+                    user_id: full_user.id.clone(),
+                    anime_watch_status: anime.list_status.status.clone(),
+                    times_in_queue: 0,
                 });
             }
         });
@@ -216,4 +224,16 @@ pub async fn update_list_order(
     // }
 
     json_response!(StatusCode::OK, {"status": "ok"})
+}
+
+#[axum::debug_handler]
+pub async fn get_anime(
+    State(state): State<AppState>,
+    Path(anime_id): Path<i32>,
+) -> impl IntoResponse {
+    let animes = get_anime_with_relations(state.db, anime_id).await;
+
+    let animes = animes.expect("Failed to get anime");
+
+    json_response!(StatusCode::OK, {"data": animes})
 }
