@@ -8,7 +8,7 @@ use axum::{
 };
 use serde::Serialize;
 use serde_json::json;
-use sqlx::{query_as, MySql, QueryBuilder};
+use sqlx::{query_as, Execute, MySql, QueryBuilder};
 
 use crate::{
     anime::{
@@ -176,6 +176,9 @@ pub struct ListUpdateRequest {
     pub ids: Vec<i32>,
 }
 
+// The number of parameters in MySQL must fit in a `u16`.
+const BIND_LIMIT: usize = 65535;
+
 #[axum::debug_handler]
 pub async fn update_list_order(
     State(state): State<AppState>,
@@ -191,23 +194,49 @@ pub async fn update_list_order(
     let mut index = 1;
     let user_id = Arc::new(user.id);
 
-    query_builder.push_values(data.ids, |mut b, id| {
-        b.push_bind(id)
-            .push_bind(user_id.to_string())
-            .push_bind(index);
-        index += 1;
-    });
+    let groups = data.ids.chunks(BIND_LIMIT / 3);
 
-    query_builder
-        .push(
-            r#"
-            ON DUPLICATE KEY UPDATE watch_priority = VALUES(watch_priority)
-            "#,
-        )
-        .build()
-        .execute(&state.db)
-        .await
-        .expect("Failed to update anime_user");
+    for group in groups {
+        query_builder.push_values(group.iter(), |mut b, id| {
+            b.push_bind(id).push_bind(user_id.as_str()).push_bind(index);
+            index += 1;
+        });
+
+        let q = query_builder
+            .push(
+                r#"
+                ON DUPLICATE KEY UPDATE watch_priority = VALUES(watch_priority)
+                "#,
+            )
+            .build();
+
+        tracing::info!("SQL: {:?} ", q.sql());
+
+        q.execute(&state.db)
+            .await
+            .expect("Failed to update anime_user");
+    }
+
+    // query_builder.push_values(data.ids.into_iter().take(BIND_LIMIT / 3), |mut b, id| {
+    //     b.push_bind(id)
+    //         .push_bind(user_id.to_string())
+    //         .push_bind(index);
+    //     index += 1;
+    // });
+
+    // let q = query_builder
+    //     .push(
+    //         r#"
+    //         ON DUPLICATE KEY UPDATE watch_priority = VALUES(watch_priority)
+    //         "#,
+    //     )
+    //     .build();
+
+    // tracing::info!("SQL: {:?} ", q.sql());
+
+    // q.execute(&state.db)
+    //     .await
+    //     .expect("Failed to update anime_user");
     // for (i, id) in data.ids.iter().enumerate() {
     //     let priority = i as f64;
     //     sqlx::query!(

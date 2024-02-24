@@ -491,6 +491,21 @@ pub struct AnilistItems {
     pub anime18: Option<AniListAnimeItem>,
     pub anime19: Option<AniListAnimeItem>,
     pub anime20: Option<AniListAnimeItem>,
+    pub anime21: Option<AniListAnimeItem>,
+    pub anime22: Option<AniListAnimeItem>,
+    pub anime23: Option<AniListAnimeItem>,
+    pub anime24: Option<AniListAnimeItem>,
+    pub anime25: Option<AniListAnimeItem>,
+    pub anime26: Option<AniListAnimeItem>,
+    pub anime27: Option<AniListAnimeItem>,
+    pub anime28: Option<AniListAnimeItem>,
+    pub anime29: Option<AniListAnimeItem>,
+    pub anime30: Option<AniListAnimeItem>,
+    pub anime31: Option<AniListAnimeItem>,
+    pub anime32: Option<AniListAnimeItem>,
+    pub anime33: Option<AniListAnimeItem>,
+    pub anime34: Option<AniListAnimeItem>,
+    pub anime35: Option<AniListAnimeItem>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -579,7 +594,7 @@ struct GqlQuery {
 
 // max this can be is 17, if higher is needed, need to change the queue processor
 // to ensure it can grab the data from the query response
-pub const MAX_ANILIST_PER_QUERY: usize = 17;
+pub const MAX_ANILIST_PER_QUERY: usize = 35;
 
 fn generate_gql_query(ids: Vec<i32>) -> GqlQuery {
     let mut ids = ids;

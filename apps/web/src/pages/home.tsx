@@ -16,6 +16,8 @@ import { AnimeList, ListStatus, RelatedAnime, useAnimeList } from "~/hooks/useAn
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "~/components/ui/accordion";
 import { Card, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
+import { cn } from "~/lib/utils";
+import { env } from "~/env.mjs";
 
 type AnimeCardProps = {
     grouped?: boolean;
@@ -23,45 +25,97 @@ type AnimeCardProps = {
     getAnimeUserList: (id: number) => AnimeList | undefined;
     disabled?: boolean;
     showOverlayInfo?: boolean;
+    hasNotWatchedPrequal: (id: number) => boolean;
 };
 
 const InnerAnimeCard = (props: AnimeCardProps) => (
     <div
-        class={"transition-transform flex flex-col items-center text-center"}
+        class={"transition-transform flex flex-col items-center text-center "}
         classList={{
             "opacity-25": props.disabled,
             "pointer-events-none": props.disabled,
         }}>
-        <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.picture} />
-        <p>{props.anime.romaji_title}</p>
+        <div class={"relative"}>
+            <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.picture} />
+            <p
+                class={
+                    "absolute bottom-0 px-1 bg-slate-800 opacity-80 w-full min-h-12 py-2 flex items-center justify-center"
+                }>
+                <span class={"opacity-100"}>{props.anime.romaji_title}</span>
+            </p>
+        </div>
     </div>
 );
+const Note = (props: { children: string; class?: string }) => {
+    return (
+        <Badge class={cn("w-2 hover:w-36 max-w-fit overflow-hidden transition-all duration-700 group", props.class)}>
+            <span class={"text-nowrap opacity-0 group-hover:opacity-100 transition-all"}>{props.children}</span>
+        </Badge>
+    );
+};
 
 const AnimeCardComp = (props: AnimeCardProps) => {
-    console.log("props", props.anime);
+    const [isHover, setisHover] = createSignal(false);
+    const enableHover = () => setisHover(true);
+    const disableHover = () => setisHover(false);
+
+    const getOffset = (index: number) => {
+        return (index + 1) * (isHover() ? 3 : 1) * 30;
+    };
+
     return (
         <div class={"flex relative items-center justify-center w-full"}>
             <Show when={props.showOverlayInfo}>
-                <div class={"absolute top-2 mr-2 flex w-full justify-end"}>
+                <div class={"absolute top-2 mr-2 flex w-full justify-end z-[101] flex-col items-end"}>
                     <Show
                         when={
                             typeof props.anime.relation !== "string" &&
-                            props.anime.relation.filter((r) => isStatus(r, ["RELEASING", "NOT_YET_RELEASED"])).length >
-                                0
+                            props.anime.relation.filter((r) => isStatus(r, ["RELEASING"])).length > 0
                         }>
-                        <Badge>New Season Soon</Badge>
+                        <Note class={"bg-green-300 hover:bg-green-300"}>New Season Releasing</Note>
+                    </Show>
+                    <Show
+                        when={
+                            typeof props.anime.relation !== "string" &&
+                            props.anime.relation.filter((r) => isStatus(r, ["NOT_YET_RELEASED"])).length > 0
+                        }>
+                        <Note class={"bg-green-300 hover:bg-green-300"}>New Season Soon</Note>
+                    </Show>
+                    <Show when={props.hasNotWatchedPrequal(props.anime.id)}>
+                        <Note class={"bg-red-400 hover:bg-red-400"}>Prequel Unwatched</Note>
                     </Show>
                     <Show when={!props.getAnimeUserList(props.anime.id)}>
-                        <Badge>Not In List</Badge>
+                        <Note class={"bg-yellow-300 hover:bg-yellow-300"}>Not In List</Note>
                     </Show>
                 </div>
             </Show>
-            <InnerAnimeCard {...props} />
-            <Show when={props.grouped}>
-                <For each={props.anime.relation}>
-                    {(related) => <InnerAnimeCard anime={related} getAnimeUserList={props.getAnimeUserList} />}
-                </For>
-            </Show>
+            <div
+                class={"flex"}
+                onMouseEnter={enableHover}
+                onMouseLeave={disableHover}
+                classList={{
+                    "opacity-25": props.disabled,
+                    "pointer-events-none": props.disabled,
+                    "transition-transform": true,
+                }}>
+                <div class={"z-[100]"}>
+                    <InnerAnimeCard {...props} />
+                </div>
+                {/* <Show when={props.grouped}>
+                    <For each={props.anime.relation}>
+                        {(related, index) => (
+                            <div
+                                style={{
+                                    transform: `translate(${getOffset(index())}px, ${getOffset(index())}px)`,
+                                    "z-index": 99 - index(),
+                                }}
+                                class={"absolute transition-transform duration-200"}>
+                                <InnerAnimeCard {...props} anime={related} />
+                            </div>
+                        )}
+                    </For>
+                </Show> */}
+            </div>
         </div>
     );
 };
@@ -73,7 +127,7 @@ const AnimeCard = (props: AnimeCardProps) => {
     return (
         <div
             use:sortable
-            class="sortable transition-opacity"
+            class="sortable transition-opacity touch-none"
             classList={{
                 "opacity-25 duration-250": sortable.isActiveDraggable || props.disabled,
                 "transition-transform": !!state.active.draggable,
@@ -160,7 +214,7 @@ function isBroadcastWithin12Hours(item: AnimeList) {
     // return Math.abs(diffHours) <= 12;
 }
 const c = () => {
-    return [] as (AnimeList | RelatedAnime)[];
+    return [] as AnimeList[];
 };
 
 const getS1Anime = (anime: AnimeList | RelatedAnime) => {
@@ -185,6 +239,14 @@ const isStatus = (anime: AnimeList | RelatedAnime, status: string[]) => {
 export default function Home(props: RouteSectionProps) {
     const user = createUser();
     const anime = useAnimeList();
+
+    createEffect(() => {
+        if (anime.data?.status === "importing") {
+            setInterval(() => {
+                anime.refetch();
+            }, 1000);
+        }
+    });
 
     const filteredAnimes = createMemo(() => {
         if (!anime.data) {
@@ -235,26 +297,30 @@ export default function Home(props: RouteSectionProps) {
                 const userList = anime.data.animes.find((a) => a.id === r.id);
 
                 if (!userList) {
-                    // if (!userList && isStatus(r, ["RELEASING", "NOT_YET_RELEASED"])) {
-                    sequalNotInList.push(r);
+                    sequalNotInList.push(r as unknown as AnimeList);
+                } else {
+                    if (userList.watch_status !== "COMPLETED" && userList.status === "FINISHED") {
+                        watchingReleased.push(userList);
+                    }
+
+                    if (userList.watch_status !== "COMPLETED" && userList.status === "RELEASING") {
+                        watchingReleasing.push(userList);
+                    }
                 }
 
                 if (a.watch_status === "COMPLETED" && userList?.watch_status !== "COMPLETED") {
-                    hasWatchedPrequal.push(r);
+                    hasWatchedPrequal.push(userList);
                 }
 
                 const prev = a.relation[index - 1];
                 const prevList = anime.data.animes.find((a) => a.id === prev?.id);
-                if (prev.romaji_title.startsWith("Date A Live")) {
-                    console.log("prev", prev);
-                }
 
                 if (
                     isStatus(r, ["NOT_YET_RELEASED", "RELEASING"]) &&
                     a.watch_status !== "COMPLETED" &&
                     (prevList?.watch_status !== "COMPLETED" || prevList === undefined)
                 ) {
-                    hasNotWatchedPrequal.push(prev);
+                    hasNotWatchedPrequal.push(prevList);
                 }
 
                 if (
@@ -262,10 +328,7 @@ export default function Home(props: RouteSectionProps) {
                     (r.status === "RELEASING" || r.status === "NOT_YET_RELEASED") &&
                     userList?.watch_status !== "WATCHING"
                 ) {
-                    if (r.romaji_title.startsWith("MASHLE")) {
-                        console.log("r", userList);
-                    }
-                    upcomingSequals.push(r);
+                    upcomingSequals.push(userList);
                 }
             }
         }
@@ -308,7 +371,7 @@ export default function Home(props: RouteSectionProps) {
         mutationKey: ["anime", "list", "update"],
         mutationFn: async (ids: number[]) => {
             console.log("ids", ids);
-            const res = await fetch("http://localhost:3001/api/v1/order", {
+            const res = await fetch(`${import.meta.env.VITE_API_URL ?? ""}/api/v1/order`, {
                 method: "POST",
                 credentials: "include",
                 body: JSON.stringify({ ids }),
@@ -325,10 +388,11 @@ export default function Home(props: RouteSectionProps) {
         },
     }));
 
-    const [items, setItems] = createSignal(filteredAnimes().watchingReleased);
+    const [items, setItems] = createSignal(filteredAnimes().watchingReleased ?? []);
 
     createEffect(() => {
-        setItems(filteredAnimes().watchingReleased);
+        if (filteredAnimes()?.watchingReleased)
+            setItems(filteredAnimes().watchingReleased.sort((a, b) => a.watch_priority - b.watch_priority));
     });
 
     const ids = () => items().map((item) => item.id);
@@ -347,9 +411,35 @@ export default function Home(props: RouteSectionProps) {
     };
 
     const getAnimeUserList = (id: number) => {
-        const a = anime.data?.animes.find((a) => a.id === id);
-        console.log("a", a);
-        return a;
+        return anime.data?.animes.find((a) => a.id === id);
+    };
+
+    const hasNotWatchedPrequal = (id: number) => {
+        const topLevel = anime.data?.animes.find((a) => a.id === id);
+
+        if (topLevel?.relation.filter((r) => r.relation === "PREQUEL").length === 0) {
+            return false;
+        }
+
+        const related = anime.data?.animes.filter((a) => a.relation.find((r) => r.id === id));
+
+        if (!topLevel && (!related || related.length === 0)) {
+            return false;
+        }
+
+        for (const r of related) {
+            if (id === 56876) {
+                console.log("aaaaa", r);
+            }
+            if (r.watch_status !== "COMPLETED") {
+                if (id === 56876) {
+                    console.log("r", r);
+                    console.log("topLevel", topLevel);
+                }
+                return true;
+            }
+        }
+        return false;
     };
 
     return (
@@ -436,6 +526,7 @@ export default function Home(props: RouteSectionProps) {
                                                 <AnimeCardComp
                                                     anime={anime}
                                                     getAnimeUserList={getAnimeUserList}
+                                                    hasNotWatchedPrequal={hasNotWatchedPrequal}
                                                     showOverlayInfo
                                                 />
                                             )}
@@ -468,8 +559,10 @@ export default function Home(props: RouteSectionProps) {
                                     <AnimeCard
                                         anime={anime}
                                         disabled={updateListOrder.isPending}
+                                        grouped
                                         showOverlayInfo
                                         getAnimeUserList={getAnimeUserList}
+                                        hasNotWatchedPrequal={hasNotWatchedPrequal}
                                     />
                                 )}
                             </For>
@@ -480,6 +573,7 @@ export default function Home(props: RouteSectionProps) {
                             <AnimeCardComp
                                 anime={items().find((a) => a.id === draggable.id)}
                                 getAnimeUserList={getAnimeUserList}
+                                hasNotWatchedPrequal={hasNotWatchedPrequal}
                             />
                         )}
                     </DragOverlay>

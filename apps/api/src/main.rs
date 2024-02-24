@@ -14,7 +14,6 @@ use std::{
     sync::Arc,
 };
 
-use anime::AnimeRelationshipType;
 use axum::{
     extract::FromRef,
     http::{HeaderValue, Method, StatusCode},
@@ -32,6 +31,7 @@ use reqwest::Client;
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
+use tower_http::services::ServeDir;
 
 use crate::middleware::auth_guard::guard;
 
@@ -153,6 +153,7 @@ async fn main() {
         create_oauth_client(api_url.clone(), mal_client_id.clone(), mal_client_secret);
 
     let app = Router::new()
+        .nest_service("/", ServeDir::new("public"))
         .nest(
             "/api/v1",
             Router::new()
@@ -178,7 +179,7 @@ async fn main() {
     background::start_background_job(state.clone());
     queue::import_queue_worker(state);
 
-    let address = SocketAddr::from(([127, 0, 0, 1], 3001));
+    let address = SocketAddr::from(([0, 0, 0, 0], 3001));
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();
     tracing::info!("listening on {}", address);
     axum::serve(listener, app.into_make_service())
