@@ -128,7 +128,7 @@ async fn main() {
             "http://localhost:3000",
         )));
 
-    let api_url = std::env::var("APP_URL").unwrap_or("http://localhost:3001".to_string());
+    let api_url = std::env::var("API_URL").unwrap_or("http://localhost:3001".to_string());
     let mal_client_id = std::env::var("MAL_CLIENT_ID").expect("MAL_CLIENT_ID not set");
     let mal_client_secret = std::env::var("MAL_CLIENT_SECRET").expect("MAL_CLIENT_SECRET not set");
 

@@ -8,8 +8,6 @@ import {
     closestCenter,
 } from "@thisbeyond/solid-dnd";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { RouteSectionProps } from "@solidjs/router";
-import { createUser } from "~/components/auth";
 import { createMutation } from "@tanstack/solid-query";
 import { Button } from "~/components/ui/button";
 import { AnimeList, ListStatus, RelatedAnime, useAnimeList } from "~/hooks/useAnimeList";
@@ -17,35 +15,34 @@ import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "~/
 import { Card, CardHeader, CardTitle } from "~/components/ui/card";
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
-import { env } from "~/env.mjs";
+import {
+    ContextMenu,
+    ContextMenuCheckboxItem,
+    ContextMenuContent,
+    ContextMenuGroup,
+    ContextMenuGroupLabel,
+    ContextMenuItem,
+    ContextMenuPortal,
+    ContextMenuRadioGroup,
+    ContextMenuRadioItem,
+    ContextMenuSeparator,
+    ContextMenuShortcut,
+    ContextMenuSub,
+    ContextMenuSubContent,
+    ContextMenuSubTrigger,
+    ContextMenuTrigger,
+} from "~/components/ui/context-menu";
+import { FaSolidArrowUpRightFromSquare } from "solid-icons/fa";
 
 type AnimeCardProps = {
     grouped?: boolean;
-    anime: AnimeList | RelatedAnime;
+    anime: AnimeList | (RelatedAnime & { watch_status?: string });
     getAnimeUserList: (id: number) => AnimeList | undefined;
     disabled?: boolean;
     showOverlayInfo?: boolean;
     hasNotWatchedPrequal: (id: number) => boolean;
 };
 
-const InnerAnimeCard = (props: AnimeCardProps) => (
-    <div
-        class={"transition-transform flex flex-col items-center text-center "}
-        classList={{
-            "opacity-25": props.disabled,
-            "pointer-events-none": props.disabled,
-        }}>
-        <div class={"relative"}>
-            <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.picture} />
-            <p
-                class={
-                    "absolute bottom-0 px-1 bg-slate-800 opacity-80 w-full min-h-12 py-2 flex items-center justify-center"
-                }>
-                <span class={"opacity-100"}>{props.anime.romaji_title}</span>
-            </p>
-        </div>
-    </div>
-);
 const Note = (props: { children: string; class?: string }) => {
     return (
         <Badge class={cn("w-2 hover:w-36 max-w-fit overflow-hidden transition-all duration-700 group", props.class)}>
@@ -54,73 +51,127 @@ const Note = (props: { children: string; class?: string }) => {
     );
 };
 
-const AnimeCardComp = (props: AnimeCardProps) => {
-    const [isHover, setisHover] = createSignal(false);
-    const enableHover = () => setisHover(true);
-    const disableHover = () => setisHover(false);
-
-    const getOffset = (index: number) => {
-        return (index + 1) * (isHover() ? 3 : 1) * 30;
-    };
-
+const AnimeCardBadges = (props: AnimeCardProps) => {
     return (
-        <div class={"flex relative items-center justify-center w-full"}>
-            <Show when={props.showOverlayInfo}>
-                <div class={"absolute top-2 mr-2 flex w-full justify-end z-[101] flex-col items-end"}>
-                    <Show
-                        when={
-                            typeof props.anime.relation !== "string" &&
-                            props.anime.relation.filter((r) => isStatus(r, ["RELEASING"])).length > 0
-                        }>
-                        <Note class={"bg-green-300 hover:bg-green-300"}>New Season Releasing</Note>
-                    </Show>
-                    <Show
-                        when={
-                            typeof props.anime.relation !== "string" &&
-                            props.anime.relation.filter((r) => isStatus(r, ["NOT_YET_RELEASED"])).length > 0
-                        }>
-                        <Note class={"bg-green-300 hover:bg-green-300"}>New Season Soon</Note>
-                    </Show>
-                    <Show when={props.hasNotWatchedPrequal(props.anime.id)}>
-                        <Note class={"bg-red-400 hover:bg-red-400"}>Prequel Unwatched</Note>
-                    </Show>
-                    <Show when={!props.getAnimeUserList(props.anime.id)}>
-                        <Note class={"bg-yellow-300 hover:bg-yellow-300"}>Not In List</Note>
-                    </Show>
-                </div>
+        <div class={"absolute top-2 mr-2 flex w-full justify-end flex-col items-end gap-1 z-10"}>
+            <Show when={props.anime.watch_status === "ON_HOLD"}>
+                <Note class={"bg-yellow-300 hover:bg-yellow-300"}>On Hold</Note>
             </Show>
+            <Show when={props.anime.watch_status === "DROPPED"}>
+                <Note class={"bg-red-400 hover:bg-red-400"}>Dropped</Note>
+            </Show>
+
+            <Show
+                when={
+                    typeof props.anime.relation !== "string" &&
+                    props.anime.relation.filter((r) => isStatus(r, ["RELEASING"])).length > 0
+                }>
+                <Note class={"bg-green-300 hover:bg-green-300"}>New Season Releasing</Note>
+            </Show>
+            <Show
+                when={
+                    typeof props.anime.relation !== "string" &&
+                    props.anime.relation.filter((r) => isStatus(r, ["NOT_YET_RELEASED"])).length > 0
+                }>
+                <Note class={"bg-green-300 hover:bg-green-300"}>New Season Soon</Note>
+            </Show>
+            <Show when={props.hasNotWatchedPrequal(props.anime.id)}>
+                <Note class={"bg-red-400 hover:bg-red-400"}>Prequel Unwatched</Note>
+            </Show>
+            <Show when={!props.getAnimeUserList(props.anime.id)}>
+                <Note class={"bg-yellow-300 hover:bg-yellow-300"}>Not In List</Note>
+            </Show>
+        </div>
+    );
+};
+
+const AnimeCardInnerContent = (props: AnimeCardProps) => {
+    return (
+        <div
+            class={"flex"}
+            classList={{
+                "opacity-25": props.disabled,
+                "pointer-events-none": props.disabled,
+                "transition-transform": true,
+            }}>
             <div
-                class={"flex"}
-                onMouseEnter={enableHover}
-                onMouseLeave={disableHover}
+                class={"transition-transform flex flex-col items-center text-center "}
                 classList={{
                     "opacity-25": props.disabled,
                     "pointer-events-none": props.disabled,
-                    "transition-transform": true,
                 }}>
-                <div class={"z-[100]"}>
-                    <InnerAnimeCard {...props} />
+                <div class={"relative"}>
+                    <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.picture} />
+                    <p
+                        class={
+                            "absolute bottom-0 px-1 bg-slate-800 opacity-80 w-full min-h-12 py-2 flex items-center justify-center"
+                        }>
+                        <span class={"opacity-100"}>{props.anime.romaji_title}</span>
+                    </p>
                 </div>
-                {/* <Show when={props.grouped}>
-                    <For each={props.anime.relation}>
-                        {(related, index) => (
-                            <div
-                                style={{
-                                    transform: `translate(${getOffset(index())}px, ${getOffset(index())}px)`,
-                                    "z-index": 99 - index(),
-                                }}
-                                class={"absolute transition-transform duration-200"}>
-                                <InnerAnimeCard {...props} anime={related} />
-                            </div>
-                        )}
-                    </For>
-                </Show> */}
             </div>
         </div>
     );
 };
 
-const AnimeCard = (props: AnimeCardProps) => {
+const AnimeCardInner = (props: AnimeCardProps) => {
+    return (
+        <div class={"flex relative items-center justify-center w-full"}>
+            <Show when={props.showOverlayInfo}>
+                <AnimeCardBadges {...props} />
+            </Show>
+            <AnimeCardInnerContent {...props} />
+        </div>
+    );
+};
+
+const AnimeCardWithContext = (props: AnimeCardProps & { isDraggable?: boolean; bringToFront: () => void }) => {
+    return (
+        <div class={"flex relative items-center justify-center w-full"}>
+            <Show when={props.showOverlayInfo}>
+                <AnimeCardBadges {...props} />
+            </Show>
+            <ContextMenu>
+                <ContextMenuTrigger>
+                    <AnimeCardInnerContent {...props} />
+                </ContextMenuTrigger>
+                <ContextMenuContent class="w-48">
+                    <ContextMenuItem onClick={props.bringToFront}>
+                        <span>Bring To Front</span>
+                    </ContextMenuItem>
+                    <ContextMenuSub overlap>
+                        <ContextMenuSubTrigger>Watch Status</ContextMenuSubTrigger>
+                        <ContextMenuPortal>
+                            <ContextMenuGroup>
+                                <ContextMenuRadioGroup value={props.anime.watch_status} onChange={() => {}}>
+                                    <ContextMenuRadioItem value="WATCHING">Watching</ContextMenuRadioItem>
+                                    <ContextMenuRadioItem value="COMPLETED">Completed</ContextMenuRadioItem>
+                                    <ContextMenuRadioItem value="PLAN_TO_WATCH">Plan To Watch</ContextMenuRadioItem>
+                                    <ContextMenuRadioItem value="DROPPED">Dropped</ContextMenuRadioItem>
+                                </ContextMenuRadioGroup>
+                            </ContextMenuGroup>
+                        </ContextMenuPortal>
+                    </ContextMenuSub>
+                    <ContextMenuSeparator />
+                    <ContextMenuItem class={"pointer-events-auto"}>
+                        <a
+                            class={"w-full"}
+                            href={`https://myanimelist.net/anime/${props.anime.id}`}
+                            target={"_blank"}
+                            rel={"noreferrer noopener"}>
+                            <span class={"flex justify-between w-full items-center"}>
+                                View on MAL
+                                <FaSolidArrowUpRightFromSquare />
+                            </span>
+                        </a>
+                    </ContextMenuItem>
+                </ContextMenuContent>
+            </ContextMenu>
+        </div>
+    );
+};
+
+const AnimeCard = (props: AnimeCardProps & { bringToFront: () => void }) => {
     const sortable = createSortable(props.anime.id);
     const [state] = useDragDropContext();
 
@@ -132,7 +183,7 @@ const AnimeCard = (props: AnimeCardProps) => {
                 "opacity-25 duration-250": sortable.isActiveDraggable || props.disabled,
                 "transition-transform": !!state.active.draggable,
             }}>
-            <AnimeCardComp grouped={false} {...props} />
+            <AnimeCardWithContext grouped={false} {...props} isDraggable />
         </div>
     );
 };
@@ -167,77 +218,15 @@ const Fix = () => {
     return null;
 };
 
-// Helper function to convert a day of the week to a number (0 = Sunday, 6 = Saturday)
-const dayOfWeekToNumber = (day: string): number => {
-    const days = ["sunday", "monday", "tuesday", "wednesday", "thursday", "friday", "saturday"];
-    return days.indexOf(day?.toLowerCase());
-};
-
-// Converts broadcast time to a Date object in JST
-const broadcastTimeToJSTDate = (broadcastDay: string, broadcastTime: string) => {
-    const now = new Date();
-    const dayIndex = dayOfWeekToNumber(broadcastDay);
-    if (dayIndex === -1) {
-        return null;
-    }
-    // Create a Date object for the next occurrence of the broadcast day
-    let broadcastDate = new Date(now);
-    broadcastDate.setDate(now.getDate() + ((7 + dayIndex - now.getDay()) % 7));
-    const [hours, minutes] = broadcastTime.split(":").map(Number);
-    // Set time for broadcast in JST (+9 UTC)
-    broadcastDate.setHours(hours, minutes, 0, 0);
-    return broadcastDate;
-};
-
-// Main function to check if the broadcast is within 12 hours of the user's current time
-function isBroadcastWithin12Hours(item: AnimeList) {
-    return false;
-    // const broadcastDay = item.broadcast?.day_of_the_week;
-    // const broadcastTime = item.broadcast?.start_time;
-
-    // // Convert broadcast time to Date object in JST
-    // const broadcastDate = broadcastTimeToJSTDate(broadcastDay, broadcastTime);
-    // if (!broadcastDate) {
-    //     return false;
-    // }
-    // // Convert broadcast Date to UTC
-    // const broadcastUTC = broadcastDate.getTime() - 9 * 60 * 60 * 1000; // subtract 9 hours from JST to get UTC
-    // // Adjust broadcast time to user's local time
-    // const broadcastLocalTime = new Date(broadcastUTC + new Date().getTimezoneOffset() * -1 * 60000);
-
-    // // Get current user time
-    // const currentTime = new Date();
-    // // Calculate difference in hours between broadcast time and current time
-    // const diffHours = (broadcastLocalTime.getTime() - currentTime.getTime()) / (1000 * 60 * 60);
-
-    // // Check if the difference is within ±12 hours
-    // return Math.abs(diffHours) <= 12;
-}
 const c = () => {
     return [] as AnimeList[];
-};
-
-const getS1Anime = (anime: AnimeList | RelatedAnime) => {
-    let base: AnimeList | RelatedAnime = anime;
-    for (const r of anime.relation) {
-        if (r.relation === "PREQUEL") {
-            base = getS1Anime(r);
-        }
-    }
-
-    if (base?.id === anime.id) {
-        return anime;
-    }
-
-    return base;
 };
 
 const isStatus = (anime: AnimeList | RelatedAnime, status: string[]) => {
     return status.includes(anime.status);
 };
 
-export default function Home(props: RouteSectionProps) {
-    const user = createUser();
+export default function Home() {
     const anime = useAnimeList();
 
     createEffect(() => {
@@ -328,21 +317,19 @@ export default function Home(props: RouteSectionProps) {
                     (r.status === "RELEASING" || r.status === "NOT_YET_RELEASED") &&
                     userList?.watch_status !== "WATCHING"
                 ) {
-                    upcomingSequals.push(userList);
+                    upcomingSequals.push(userList || (r as unknown as AnimeList));
                 }
             }
         }
 
-        console.log("hasNotWatchedPrequal", hasNotWatchedPrequal);
-
         return {
-            watchingReleasing,
+            // watchingReleasing,
             watchingReleased,
-            notWatchingReleasing,
-            hasSequel,
-            hasWatchedPrequal,
-            hasNotWatchedPrequal: hasNotWatchedPrequal,
-            seasonOnes,
+            // notWatchingReleasing,
+            // hasSequel,
+            // hasWatchedPrequal,
+            // hasNotWatchedPrequal: hasNotWatchedPrequal,
+            // seasonOnes,
             upcomingSequals,
             sequalNotInList,
             // watching,
@@ -356,15 +343,6 @@ export default function Home(props: RouteSectionProps) {
             // hasSecondSeasonInListWithoutPrequal,
             // upcomingSequalsWithoutPrequalWatched,
         };
-    });
-
-    // createEffect(() => {
-    //     console.log("featured", filteredAnimes());
-    // });
-
-    const releasedAnime = createMemo(() => {
-        const released = anime.data?.animes.filter((a) => a.status === "FINISHED" && a.watch_status !== "COMPLETED");
-        return released;
     });
 
     const updateListOrder = createMutation(() => ({
@@ -442,6 +420,10 @@ export default function Home(props: RouteSectionProps) {
         return false;
     };
 
+    createEffect(() => {
+        console.log("items", items().length);
+    });
+
     return (
         <div class={"p-6 flex flex-col gap-3"}>
             <Button
@@ -455,7 +437,6 @@ export default function Home(props: RouteSectionProps) {
             </Button>
 
             <Show when={anime.data}>
-                <div>{anime.data.status}</div>
                 <Show when={anime.data.status === ListStatus.Importing}>
                     <Card>
                         <CardHeader>
@@ -464,52 +445,15 @@ export default function Home(props: RouteSectionProps) {
                     </Card>
                 </Show>
 
-                {/* <Show when={anime.data.status !== ListStatus.Importing}> */}
                 <Show when={anime.data.status === ListStatus.Updating}>
-                    <div>We are updating your list.</div>
+                    <Card>
+                        <CardHeader>
+                            <CardTitle>We are updating your list.</CardTitle>
+                        </CardHeader>
+                    </Card>
                 </Show>
 
                 <Accordion multiple={false} collapsible>
-                    {/* <AccordionItem value={"a"}>
-                        <AccordionTrigger>
-                            <h1>a ({filteredAnimes().a.length})</h1>
-                        </AccordionTrigger>
-
-                        <AccordionContent>
-                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                                <For each={filteredAnimes().a}>
-                                    {(anime) => <AnimeCardComp grouped anime={anime} />}
-                                </For>
-                            </div>
-                        </AccordionContent>
-                    </AccordionItem> */}
-                    {/* <AccordionItem value={"not-watched-prequel"}>
-                        <AccordionTrigger>
-                            <h1>not-watched-prequel ({filteredAnimes().hasNotWatchedPrequal.length})</h1>
-                        </AccordionTrigger>
-
-                        <AccordionContent>
-                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                                <For each={filteredAnimes().hasNotWatchedPrequal}>
-                                    {(anime) => <AnimeCardComp anime={anime} grouped />}
-                                </For>
-                            </div>
-                        </AccordionContent>
-                    </AccordionItem>
-
-                    <AccordionItem value={"s ones"}>
-                        <AccordionTrigger>
-                            <h1>s ones ({filteredAnimes().seasonOnes.length})</h1>
-                        </AccordionTrigger>
-
-                        <AccordionContent>
-                            <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                                <For each={filteredAnimes().seasonOnes}>
-                                    {(anime) => <AnimeCardComp anime={anime} grouped />}
-                                </For>
-                            </div>
-                        </AccordionContent>
-                    </AccordionItem> */}
                     <For each={Object.keys(filteredAnimes())}>
                         {(key) => (
                             <AccordionItem value={key}>
@@ -523,7 +467,7 @@ export default function Home(props: RouteSectionProps) {
                                     <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
                                         <For each={filteredAnimes()[key]}>
                                             {(anime) => (
-                                                <AnimeCardComp
+                                                <AnimeCardInner
                                                     anime={anime}
                                                     getAnimeUserList={getAnimeUserList}
                                                     hasNotWatchedPrequal={hasNotWatchedPrequal}
@@ -537,15 +481,6 @@ export default function Home(props: RouteSectionProps) {
                         )}
                     </For>
                 </Accordion>
-                {/* <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                    <For each={featuredAnime().releasingToday}>{(anime) => <AnimeCardComp anime={anime} />}</For>
-                </div>
-                <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                    <For each={featuredAnime().releasingUnwatched}>{(anime) => <AnimeCardComp anime={anime} />}</For>
-                </div>
-                <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                    <For each={featuredAnime().gettingNewSeason}>{(anime) => <AnimeCardComp anime={anime} />}</For>
-                </div> */}
 
                 <div class={"w-full h-1 bg-red-500"}></div>
 
@@ -563,6 +498,12 @@ export default function Home(props: RouteSectionProps) {
                                         showOverlayInfo
                                         getAnimeUserList={getAnimeUserList}
                                         hasNotWatchedPrequal={hasNotWatchedPrequal}
+                                        bringToFront={() => {
+                                            const index = items().findIndex((a) => a.id === anime.id);
+                                            const updatedItems = items().slice();
+                                            updatedItems.splice(0, 0, ...updatedItems.splice(index, 1));
+                                            setItems(updatedItems);
+                                        }}
                                     />
                                 )}
                             </For>
@@ -570,7 +511,7 @@ export default function Home(props: RouteSectionProps) {
                     </SortableProvider>
                     <DragOverlay class={"transition-transform"}>
                         {(draggable) => (
-                            <AnimeCardComp
+                            <AnimeCardInner
                                 anime={items().find((a) => a.id === draggable.id)}
                                 getAnimeUserList={getAnimeUserList}
                                 hasNotWatchedPrequal={hasNotWatchedPrequal}
@@ -579,7 +520,6 @@ export default function Home(props: RouteSectionProps) {
                     </DragOverlay>
                 </DragDropProvider>
             </Show>
-            {/* </Show> */}
         </div>
     );
 }

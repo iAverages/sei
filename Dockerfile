@@ -40,6 +40,7 @@ COPY --from=builder /sei/out/yarn.lock ./yarn.lock
 RUN yarn install
 
 COPY --from=builder /sei/out/full/ .
+COPY .env .env
 RUN yarn turbo run build --filter=@sei/web
 
 FROM debian:bookworm-slim as runner
