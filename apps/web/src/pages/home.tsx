@@ -349,7 +349,7 @@ export default function Home() {
         mutationKey: ["anime", "list", "update"],
         mutationFn: async (ids: number[]) => {
             console.log("ids", ids);
-            const res = await fetch(`${import.meta.env.VITE_API_URL ?? ""}/api/v1/order`, {
+            const res = await fetch(`${import.meta.env.PUBLIC_API_URL ?? ""}/api/v1/order`, {
                 method: "POST",
                 credentials: "include",
                 body: JSON.stringify({ ids }),

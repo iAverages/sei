@@ -1,5 +1,4 @@
 import { createQuery } from "@tanstack/solid-query";
-import { env } from "~/env.mjs";
 
 export type BaseAnime = {
     created_at: string;
@@ -48,7 +47,7 @@ export const useAnimeList = () => {
     return createQuery(() => ({
         queryKey: ["anime", "list"],
         queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL ?? ""}/api/v1/anime`, {
+            const res = await fetch(`${import.meta.env.PUBLIC_API_URL ?? ""}/api/v1/anime`, {
                 credentials: "include",
             });
 

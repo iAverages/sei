@@ -2,14 +2,13 @@ import { useNavigate } from "@solidjs/router";
 import { createQuery } from "@tanstack/solid-query";
 import { TbLoader2 } from "solid-icons/tb";
 import { JSX, Show, createEffect } from "solid-js";
-import { env } from "~/env.mjs";
 
 export const createUser = () => {
     return createQuery(() => ({
         staleTime: 1000 * 60,
         queryKey: ["user", "me"],
         queryFn: async () => {
-            const res = await fetch(`${import.meta.env.VITE_API_URL ?? ""}/api/v1/auth/me`, {
+            const res = await fetch(`${import.meta.env.PUBLIC_API_URL ?? ""}/api/v1/auth/me`, {
                 credentials: "include",
             });
 
