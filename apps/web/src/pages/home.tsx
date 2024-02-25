@@ -1,192 +1,15 @@
 import { useDragDropContext } from "@thisbeyond/solid-dnd";
-import {
-    DragDropProvider,
-    DragDropSensors,
-    DragOverlay,
-    SortableProvider,
-    createSortable,
-    closestCenter,
-} from "@thisbeyond/solid-dnd";
+import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
-import { createMutation } from "@tanstack/solid-query";
 import { Button } from "~/components/ui/button";
 import { AnimeList, ListStatus, RelatedAnime, useAnimeList } from "~/hooks/useAnimeList";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "~/components/ui/accordion";
 import { Card, CardHeader, CardTitle } from "~/components/ui/card";
-import { Badge } from "~/components/ui/badge";
-import { cn } from "~/lib/utils";
-import {
-    ContextMenu,
-    ContextMenuCheckboxItem,
-    ContextMenuContent,
-    ContextMenuGroup,
-    ContextMenuGroupLabel,
-    ContextMenuItem,
-    ContextMenuPortal,
-    ContextMenuRadioGroup,
-    ContextMenuRadioItem,
-    ContextMenuSeparator,
-    ContextMenuShortcut,
-    ContextMenuSub,
-    ContextMenuSubContent,
-    ContextMenuSubTrigger,
-    ContextMenuTrigger,
-} from "~/components/ui/context-menu";
-import { FaSolidArrowUpRightFromSquare } from "solid-icons/fa";
-
-type AnimeCardProps = {
-    grouped?: boolean;
-    anime: AnimeList | (RelatedAnime & { watch_status?: string });
-    getAnimeUserList: (id: number) => AnimeList | undefined;
-    disabled?: boolean;
-    showOverlayInfo?: boolean;
-    hasNotWatchedPrequal: (id: number) => boolean;
-};
-
-const Note = (props: { children: string; class?: string }) => {
-    return (
-        <Badge class={cn("w-2 hover:w-36 max-w-fit overflow-hidden transition-all duration-700 group", props.class)}>
-            <span class={"text-nowrap opacity-0 group-hover:opacity-100 transition-all"}>{props.children}</span>
-        </Badge>
-    );
-};
-
-const AnimeCardBadges = (props: AnimeCardProps) => {
-    return (
-        <div class={"absolute top-2 mr-2 flex w-full justify-end flex-col items-end gap-1 z-10"}>
-            <Show when={props.anime.watch_status === "ON_HOLD"}>
-                <Note class={"bg-yellow-300 hover:bg-yellow-300"}>On Hold</Note>
-            </Show>
-            <Show when={props.anime.watch_status === "DROPPED"}>
-                <Note class={"bg-red-400 hover:bg-red-400"}>Dropped</Note>
-            </Show>
-
-            <Show
-                when={
-                    typeof props.anime.relation !== "string" &&
-                    props.anime.relation.filter((r) => isStatus(r, ["RELEASING"])).length > 0
-                }>
-                <Note class={"bg-green-300 hover:bg-green-300"}>New Season Releasing</Note>
-            </Show>
-            <Show
-                when={
-                    typeof props.anime.relation !== "string" &&
-                    props.anime.relation.filter((r) => isStatus(r, ["NOT_YET_RELEASED"])).length > 0
-                }>
-                <Note class={"bg-green-300 hover:bg-green-300"}>New Season Soon</Note>
-            </Show>
-            <Show when={props.hasNotWatchedPrequal(props.anime.id)}>
-                <Note class={"bg-red-400 hover:bg-red-400"}>Prequel Unwatched</Note>
-            </Show>
-            <Show when={!props.getAnimeUserList(props.anime.id)}>
-                <Note class={"bg-yellow-300 hover:bg-yellow-300"}>Not In List</Note>
-            </Show>
-        </div>
-    );
-};
-
-const AnimeCardInnerContent = (props: AnimeCardProps) => {
-    return (
-        <div
-            class={"flex"}
-            classList={{
-                "opacity-25": props.disabled,
-                "pointer-events-none": props.disabled,
-                "transition-transform": true,
-            }}>
-            <div
-                class={"transition-transform flex flex-col items-center text-center "}
-                classList={{
-                    "opacity-25": props.disabled,
-                    "pointer-events-none": props.disabled,
-                }}>
-                <div class={"relative"}>
-                    <img class={"h-[317px] w-[225px]"} draggable={false} src={props.anime.picture} />
-                    <p
-                        class={
-                            "absolute bottom-0 px-1 bg-slate-800 opacity-80 w-full min-h-12 py-2 flex items-center justify-center"
-                        }>
-                        <span class={"opacity-100"}>{props.anime.romaji_title}</span>
-                    </p>
-                </div>
-            </div>
-        </div>
-    );
-};
-
-const AnimeCardInner = (props: AnimeCardProps) => {
-    return (
-        <div class={"flex relative items-center justify-center w-full"}>
-            <Show when={props.showOverlayInfo}>
-                <AnimeCardBadges {...props} />
-            </Show>
-            <AnimeCardInnerContent {...props} />
-        </div>
-    );
-};
-
-const AnimeCardWithContext = (props: AnimeCardProps & { isDraggable?: boolean; bringToFront: () => void }) => {
-    return (
-        <div class={"flex relative items-center justify-center w-full"}>
-            <Show when={props.showOverlayInfo}>
-                <AnimeCardBadges {...props} />
-            </Show>
-            <ContextMenu>
-                <ContextMenuTrigger>
-                    <AnimeCardInnerContent {...props} />
-                </ContextMenuTrigger>
-                <ContextMenuContent class="w-48">
-                    <ContextMenuItem onClick={props.bringToFront}>
-                        <span>Bring To Front</span>
-                    </ContextMenuItem>
-                    <ContextMenuSub overlap>
-                        <ContextMenuSubTrigger>Watch Status</ContextMenuSubTrigger>
-                        <ContextMenuPortal>
-                            <ContextMenuGroup>
-                                <ContextMenuRadioGroup value={props.anime.watch_status} onChange={() => {}}>
-                                    <ContextMenuRadioItem value="WATCHING">Watching</ContextMenuRadioItem>
-                                    <ContextMenuRadioItem value="COMPLETED">Completed</ContextMenuRadioItem>
-                                    <ContextMenuRadioItem value="PLAN_TO_WATCH">Plan To Watch</ContextMenuRadioItem>
-                                    <ContextMenuRadioItem value="DROPPED">Dropped</ContextMenuRadioItem>
-                                </ContextMenuRadioGroup>
-                            </ContextMenuGroup>
-                        </ContextMenuPortal>
-                    </ContextMenuSub>
-                    <ContextMenuSeparator />
-                    <ContextMenuItem class={"pointer-events-auto"}>
-                        <a
-                            class={"w-full"}
-                            href={`https://myanimelist.net/anime/${props.anime.id}`}
-                            target={"_blank"}
-                            rel={"noreferrer noopener"}>
-                            <span class={"flex justify-between w-full items-center"}>
-                                View on MAL
-                                <FaSolidArrowUpRightFromSquare />
-                            </span>
-                        </a>
-                    </ContextMenuItem>
-                </ContextMenuContent>
-            </ContextMenu>
-        </div>
-    );
-};
-
-const AnimeCard = (props: AnimeCardProps & { bringToFront: () => void }) => {
-    const sortable = createSortable(props.anime.id);
-    const [state] = useDragDropContext();
-
-    return (
-        <div
-            use:sortable
-            class="sortable transition-opacity touch-none"
-            classList={{
-                "opacity-25 duration-250": sortable.isActiveDraggable || props.disabled,
-                "transition-transform": !!state.active.draggable,
-            }}>
-            <AnimeCardWithContext grouped={false} {...props} isDraggable />
-        </div>
-    );
-};
+import { isStatus, isWatchStatus } from "~/lib/status";
+import { AnimeCard, AnimeCardInner } from "~/components/anime-card";
+import { createUpdateListOrder } from "~/hooks/createUpdateListOrder";
+import { useBeforeLeave } from "@solidjs/router";
+import { AiOutlineMessage } from "solid-icons/ai";
 
 // Fixes issue with being able to drag beyond some point
 // im assuimg the images break the layout and solid-dnd doesnt
@@ -219,15 +42,12 @@ const Fix = () => {
 };
 
 const c = () => {
-    return [] as AnimeList[];
-};
-
-const isStatus = (anime: AnimeList | RelatedAnime, status: string[]) => {
-    return status.includes(anime.status);
+    return [] as (AnimeList | RelatedAnime)[];
 };
 
 export default function Home() {
     const anime = useAnimeList();
+    const updateListOrder = createUpdateListOrder();
 
     createEffect(() => {
         if (anime.data?.status === "importing") {
@@ -241,15 +61,9 @@ export default function Home() {
         if (!anime.data) {
             return {};
         }
-        const d = new Date();
-        const utc = d.getTime() + d.getTimezoneOffset() * 60000;
-        const nd = new Date(utc + 3600000 * 9);
-        const todayJp = new Date(nd).toLocaleString("en-US", { weekday: "long" }).toLowerCase();
-        const today = new Date().toLocaleString("en-US", { weekday: "long" }).toLowerCase();
-        console.log("today", today, todayJp);
 
         const watchingReleasing = c();
-        const watchingReleased = c();
+        const watchingReleased = [] as AnimeList[];
         const notWatchingReleasing = c();
         const hasSequel = c();
         const hasWatchedPrequal = c();
@@ -283,22 +97,22 @@ export default function Home() {
                     hasSequel.push(a);
                 }
 
-                const userList = anime.data.animes.find((a) => a.id === r.id);
+                const relationInUserList = anime.data.animes.find((a) => a.id === r.id);
 
-                if (!userList) {
-                    sequalNotInList.push(r as unknown as AnimeList);
+                if (!relationInUserList) {
+                    sequalNotInList.push(r);
                 } else {
-                    if (userList.watch_status !== "COMPLETED" && userList.status === "FINISHED") {
-                        watchingReleased.push(userList);
+                    if (relationInUserList.watch_status !== "COMPLETED" && relationInUserList.status === "FINISHED") {
+                        watchingReleased.push(relationInUserList);
                     }
 
-                    if (userList.watch_status !== "COMPLETED" && userList.status === "RELEASING") {
-                        watchingReleasing.push(userList);
+                    if (relationInUserList.watch_status !== "COMPLETED" && relationInUserList.status === "RELEASING") {
+                        watchingReleasing.push(relationInUserList);
                     }
                 }
 
-                if (a.watch_status === "COMPLETED" && userList?.watch_status !== "COMPLETED") {
-                    hasWatchedPrequal.push(userList);
+                if (a.watch_status === "COMPLETED" && relationInUserList?.watch_status !== "COMPLETED") {
+                    hasWatchedPrequal.push(relationInUserList);
                 }
 
                 const prev = a.relation[index - 1];
@@ -306,7 +120,8 @@ export default function Home() {
 
                 if (
                     isStatus(r, ["NOT_YET_RELEASED", "RELEASING"]) &&
-                    a.watch_status !== "COMPLETED" &&
+                    !isWatchStatus(a, ["COMPLETED"]) &&
+                    // a.watch_status !== "COMPLETED"
                     (prevList?.watch_status !== "COMPLETED" || prevList === undefined)
                 ) {
                     hasNotWatchedPrequal.push(prevList);
@@ -315,16 +130,16 @@ export default function Home() {
                 if (
                     r.relation === "SEQUEL" &&
                     (r.status === "RELEASING" || r.status === "NOT_YET_RELEASED") &&
-                    userList?.watch_status !== "WATCHING"
+                    relationInUserList?.watch_status !== "WATCHING"
                 ) {
-                    upcomingSequals.push(userList || (r as unknown as AnimeList));
+                    upcomingSequals.push(relationInUserList || (r as unknown as AnimeList));
                 }
             }
         }
 
         return {
             // watchingReleasing,
-            watchingReleased,
+            watchingReleased: watchingReleased.sort((a, b) => a.watch_priority - b.watch_priority),
             // notWatchingReleasing,
             // hasSequel,
             // hasWatchedPrequal,
@@ -345,34 +160,8 @@ export default function Home() {
         };
     });
 
-    const updateListOrder = createMutation(() => ({
-        mutationKey: ["anime", "list", "update"],
-        mutationFn: async (ids: number[]) => {
-            console.log("ids", ids);
-            const res = await fetch(`${import.meta.env.PUBLIC_API_URL ?? ""}/api/v1/order`, {
-                method: "POST",
-                credentials: "include",
-                body: JSON.stringify({ ids }),
-                headers: {
-                    "Content-Type": "application/json",
-                },
-            });
-
-            if (!res.ok) {
-                throw res;
-            }
-
-            return res;
-        },
-    }));
-
-    const [items, setItems] = createSignal(filteredAnimes().watchingReleased ?? []);
-
-    createEffect(() => {
-        if (filteredAnimes()?.watchingReleased)
-            setItems(filteredAnimes().watchingReleased.sort((a, b) => a.watch_priority - b.watch_priority));
-    });
-
+    const [items, setItems] = createSignal(filteredAnimes().watchingReleased);
+    createEffect(() => setItems(filteredAnimes().watchingReleased));
     const ids = () => items().map((item) => item.id);
 
     const onDragEnd = ({ draggable, droppable }) => {
@@ -406,35 +195,36 @@ export default function Home() {
         }
 
         for (const r of related) {
-            if (id === 56876) {
-                console.log("aaaaa", r);
-            }
-            if (r.watch_status !== "COMPLETED") {
-                if (id === 56876) {
-                    console.log("r", r);
-                    console.log("topLevel", topLevel);
-                }
-                return true;
-            }
+            if (!isWatchStatus(r, ["COMPLETED"])) return true;
         }
         return false;
     };
 
-    createEffect(() => {
-        console.log("items", items().length);
+    useBeforeLeave((e) => {
+        if (updateListOrder.isPending) {
+            e.preventDefault();
+            if (window.confirm("You have unsaved changes, are you sure you want to leave?")) {
+                e.retry(true);
+            }
+            return;
+        }
+        items().some((anime, index) => {
+            if (anime?.watch_priority !== index + 1) {
+                e.preventDefault();
+                if (window.confirm("You have unsaved changes, are you sure you want to leave?")) {
+                    e.retry(true);
+                }
+                return true;
+            }
+        });
     });
 
     return (
         <div class={"p-6 flex flex-col gap-3"}>
-            <Button
-                onClick={async () => {
-                    console.time("updated");
-                    await updateListOrder.mutateAsync(items()?.map((i) => i.id));
-                    console.timeEnd("updated");
-                }}
-                class={"bg-blue-500"}>
+            <Button onClick={() => updateListOrder.mutate(items()?.map((i) => i.id))} class={"bg-blue-500"}>
                 Update List
             </Button>
+            <a href={"/login"}>login page</a>
 
             <Show when={anime.data}>
                 <Show when={anime.data.status === ListStatus.Importing}>
@@ -454,18 +244,22 @@ export default function Home() {
                 </Show>
 
                 <Accordion multiple={false} collapsible>
-                    <For each={Object.keys(filteredAnimes())}>
-                        {(key) => (
-                            <AccordionItem value={key}>
+                    <For
+                        each={[
+                            { key: "upcomingSequals", label: "Upcoming Sequals" },
+                            { key: "sequalNotInList", label: "Sequals Not In List" },
+                        ]}>
+                        {(group) => (
+                            <AccordionItem value={group.key}>
                                 <AccordionTrigger>
                                     <h1>
-                                        {key} ({filteredAnimes()[key].length})
+                                        {group.label} ({filteredAnimes()[group.key].length})
                                     </h1>
                                 </AccordionTrigger>
 
                                 <AccordionContent>
                                     <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
-                                        <For each={filteredAnimes()[key]}>
+                                        <For each={filteredAnimes()[group.key]}>
                                             {(anime) => (
                                                 <AnimeCardInner
                                                     anime={anime}
@@ -488,18 +282,18 @@ export default function Home() {
                     <Fix /> {/* See definition */}
                     <DragDropSensors />
                     <SortableProvider ids={ids()}>
-                        <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3"}>
+                        <div class={"grid grid-cols-2 md:grid-cols-3 lg:grid-cols-8 gap-3"}>
                             <For each={items()}>
-                                {(anime) => (
+                                {(animeItem) => (
                                     <AnimeCard
-                                        anime={anime}
-                                        disabled={updateListOrder.isPending}
+                                        anime={animeItem}
+                                        disabled={updateListOrder.isPending || anime.isRefetching}
                                         grouped
                                         showOverlayInfo
                                         getAnimeUserList={getAnimeUserList}
                                         hasNotWatchedPrequal={hasNotWatchedPrequal}
                                         bringToFront={() => {
-                                            const index = items().findIndex((a) => a.id === anime.id);
+                                            const index = items().findIndex((a) => a.id === animeItem.id);
                                             const updatedItems = items().slice();
                                             updatedItems.splice(0, 0, ...updatedItems.splice(index, 1));
                                             setItems(updatedItems);

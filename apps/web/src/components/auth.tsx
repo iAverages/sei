@@ -12,14 +12,13 @@ export const createUser = () => {
                 credentials: "include",
             });
 
-            console.log("res", res);
             if (!res.ok) {
                 throw res;
             }
             return res.json();
         },
         retry(failureCount, error) {
-            if (!(error instanceof Response)) return true;
+            if (!(error instanceof Response)) return failureCount < 3;
 
             // Don't retry on unauthorized
             if (error.status === 401) return false;
