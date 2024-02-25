@@ -1,4 +1,5 @@
 import { createQuery } from "@tanstack/solid-query";
+import { Accessor } from "solid-js";
 
 export type BaseAnime = {
     created_at: string;
@@ -43,8 +44,10 @@ export const ListStatus = {
 
 export type ListStatus = (typeof ListStatus)[keyof typeof ListStatus];
 
-export const useAnimeList = () => {
+export const useAnimeList = ({ hasReordered }: { hasReordered: Accessor<boolean> }) => {
     return createQuery(() => ({
+        enabled: !hasReordered(),
+        staleTime: 1000 * 60 * 5,
         queryKey: ["anime", "list"],
         queryFn: async () => {
             const res = await fetch(`${import.meta.env.PUBLIC_API_URL ?? ""}/api/v1/anime`, {

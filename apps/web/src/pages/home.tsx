@@ -46,7 +46,8 @@ const c = () => {
 };
 
 export default function Home() {
-    const anime = useAnimeList();
+    const [hasReordered, setHasReordered] = createSignal(false);
+    const anime = useAnimeList({ hasReordered });
     const updateListOrder = createUpdateListOrder();
 
     createEffect(() => {
@@ -174,6 +175,14 @@ export default function Home() {
                 updatedItems.splice(toIndex, 0, ...updatedItems.splice(fromIndex, 1));
                 setItems(updatedItems);
             }
+
+            setHasReordered(
+                items().some((anime, index) => {
+                    if (anime?.watch_priority !== index + 1) {
+                        return true;
+                    }
+                })
+            );
         }
     };
 
@@ -208,15 +217,12 @@ export default function Home() {
             }
             return;
         }
-        items().some((anime, index) => {
-            if (anime?.watch_priority !== index + 1) {
-                e.preventDefault();
-                if (window.confirm("You have unsaved changes, are you sure you want to leave?")) {
-                    e.retry(true);
-                }
-                return true;
+        if (hasReordered()) {
+            e.preventDefault();
+            if (window.confirm("You have unsaved changes, are you sure you want to leave?")) {
+                e.retry(true);
             }
-        });
+        }
     });
 
     return (

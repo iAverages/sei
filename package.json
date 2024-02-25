@@ -9,7 +9,9 @@
         "prisma": "yarn workspace @sei/prisma db",
         "db": "yarn workspace @sei/prisma",
         "api": "yarn workspace @sei/api",
-        "web": "yarn workspace @sei/web"
+        "web": "yarn workspace @sei/web",
+        "docker": "docker build . --tag ctr.avrg.dev/sei:latest",
+        "docker:push": "docker push ctr.avrg.dev/sei:latest"
     },
     "devDependencies": {
         "@sei/tsconfig": "*",
