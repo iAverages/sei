@@ -73,6 +73,14 @@ export default function Home() {
         const sequalNotInList = c();
 
         const seasonOnes = anime.data.animes.filter((a) => {
+            if (a.watch_status !== "COMPLETED" && a.status === "FINISHED") {
+                watchingReleased.push(a);
+            }
+
+            if (a.watch_status !== "COMPLETED" && a.status === "RELEASING") {
+                watchingReleasing.push(a);
+            }
+
             for (const r of a.relation) {
                 if (r.relation === "PREQUEL") {
                     return false;
@@ -83,14 +91,6 @@ export default function Home() {
         });
 
         for (const a of seasonOnes) {
-            if (a.watch_status !== "COMPLETED" && a.status === "FINISHED") {
-                watchingReleased.push(a);
-            }
-
-            if (a.watch_status !== "COMPLETED" && a.status === "RELEASING") {
-                watchingReleasing.push(a);
-            }
-
             let index = 0;
             for (const r of a.relation) {
                 index++;
@@ -102,14 +102,6 @@ export default function Home() {
 
                 if (!relationInUserList) {
                     sequalNotInList.push(r);
-                } else {
-                    if (relationInUserList.watch_status !== "COMPLETED" && relationInUserList.status === "FINISHED") {
-                        watchingReleased.push(relationInUserList);
-                    }
-
-                    if (relationInUserList.watch_status !== "COMPLETED" && relationInUserList.status === "RELEASING") {
-                        watchingReleasing.push(relationInUserList);
-                    }
                 }
 
                 if (a.watch_status === "COMPLETED" && relationInUserList?.watch_status !== "COMPLETED") {
