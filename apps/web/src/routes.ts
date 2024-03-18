@@ -15,6 +15,11 @@ export const routes: RouteDefinition[] = [
             },
         ],
     },
+
+    {
+        path: "/anime/:id",
+        component: lazy(() => import("~/pages/view-anime")),
+    },
     {
         path: "/login",
         component: Login,

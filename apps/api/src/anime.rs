@@ -1,12 +1,18 @@
-use std::{cell::RefCell, collections::HashMap, sync::Arc};
+use std::{
+    cell::RefCell,
+    collections::HashMap,
+    fmt::{Display, Formatter},
+    sync::Arc,
+    vec,
+};
 
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{Encode, Execute, MySql, QueryBuilder};
+use sqlx::{prelude::FromRow, Encode, Execute, MySql, QueryBuilder};
 use tower::builder;
 
-use crate::{models::user::User, types::Anime, AppError};
+use crate::{models::user::User, routes::anime::AnimeStatus, types::Anime, AppError};
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct AnimePicture {
@@ -57,6 +63,7 @@ pub struct MalAnimeListResponse {
     pub paging: Value,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, Clone)]
 pub struct AnimeTableRow {
     pub id: i32,
     pub english_title: Option<String>,
@@ -83,9 +90,23 @@ pub enum AnimeRelationshipType {
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, Clone)]
+pub struct AnimeRelation {
+    pub series_id: i32,
+    pub anime_id: i32,
+    // pub se: Option<String>,
+    pub romaji_title: Option<String>,
+    pub picture: String,
+    pub status: String,
+    pub season: Option<String>,
+    pub season_year: Option<i32>,
+    pub updated_at: chrono::NaiveDateTime,
+    pub created_at: chrono::NaiveDateTime,
+}
+
+#[derive(Debug, serde::Serialize, serde::Deserialize, sqlx::FromRow, Clone)]
 pub struct LocalAnimeRelation {
-    pub base_anime_id: i32,
-    pub related_anime_id: i32,
+    pub anime_id: i32,
+    pub relation_id: i32,
     pub relation: String,
 
     pub id: i32,
@@ -118,7 +139,7 @@ pub struct LocalAnime {
     pub picture: String,
     pub updated_at: chrono::NaiveDateTime,
     pub created_at: chrono::NaiveDateTime,
-    pub relation: Vec<LocalAnimeRelation>,
+    pub relation: Vec<AnimeRelation>,
 }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
@@ -137,6 +158,7 @@ pub struct UserListAnime {
     pub watch_priority: i32,
 }
 
+#[derive(FromRow)]
 pub struct DBAnime {
     pub id: i32,
     pub english_title: Option<String>,
@@ -147,6 +169,7 @@ pub struct DBAnime {
     pub created_at: chrono::NaiveDateTime,
 }
 
+#[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct DBUserAnime {
     pub id: i32,
     pub english_title: Option<String>,
@@ -161,30 +184,34 @@ pub struct DBUserAnime {
     pub watch_priority: i32,
 }
 
-pub async fn get_anime_sequel(
-    db: sqlx::Pool<sqlx::MySql>,
-    id: i32,
-) -> Result<LocalAnimeRelation, anyhow::Error> {
-    let relations = sqlx::query_as!(
-        LocalAnimeRelation,
-        r#"
-        SELECT
-            *
-        FROM
-            anime_relations
-        INNER JOIN animes ON animes.id = anime_relations.related_anime_id
-        WHERE
-            base_anime_id = ?
-        AND 
-            relation = "SEQUEL";
-    "#,
-        id
-    )
-    .fetch_one(&db)
-    .await?;
+// pub async fn get_series(
+//     db: sqlx::Pool<sqlx::MySql>,
+//     id: i32,
+// ) -> Result<AnimeRelation, anyhow::Error> {
+//     let relations = sqlx::query_as!(
+//         AnimeRelation,
+//         r#"
+//         SELECT
+//             *
+//         FROM
+//             `anime_series`
+//         WHERE
+//             series_id = (
+//             SELECT
+//                 series_id
+//             FROM
+//                 anime_series
+//             WHERE
+//                 anime_id = ?
+//         )
+//     "#,
+//         id
+//     )
+//     .fetch_one(&db)
+//     .await?;
 
-    Ok(relations)
-}
+//     Ok(relations)
+// }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone, Default)]
 pub struct AnimeWithRelations {
@@ -195,7 +222,7 @@ pub struct AnimeWithRelations {
     pub status: String,
     pub updated_at: chrono::NaiveDateTime,
     pub created_at: chrono::NaiveDateTime,
-    pub relations: Option<RefCell<Box<LocalAnimeRelation>>>,
+    pub relations: Option<RefCell<Box<AnimeRelation>>>,
 }
 
 pub async fn get_anime_with_relations(
@@ -216,19 +243,19 @@ pub async fn get_anime_with_relations(
     let mut levels = 0;
     let max_relations = 100;
 
-    let mut relations: Vec<LocalAnimeRelation> = vec![];
+    // let mut relations: Vec<AnimeRelation> = vec![];
 
-    while max_relations > levels {
-        let sequel = get_anime_sequel(db.clone(), last_relation_id).await;
-        if sequel.is_err() {
-            break;
-        }
+    // while max_relations > levels {
+    //     let sequel = get_series(db.clone(), last_relation_id).await;
+    //     if sequel.is_err() {
+    //         break;
+    //     }
 
-        let sequel = sequel.unwrap();
-        last_relation_id = sequel.id;
-        relations.push(sequel.clone());
-        levels += 1;
-    }
+    //     let sequel = sequel.unwrap();
+    //     last_relation_id = sequel.id;
+    //     relations.push(sequel.clone());
+    //     levels += 1;
+    // }
 
     Ok(AnimeTemp {
         id: anime.id,
@@ -238,7 +265,7 @@ pub async fn get_anime_with_relations(
         picture: anime.picture,
         updated_at: anime.updated_at,
         created_at: anime.created_at,
-        relation: relations,
+        relation: vec![],
     })
 }
 
@@ -251,9 +278,8 @@ pub struct AnimeTemp {
     pub picture: String,
     pub updated_at: chrono::NaiveDateTime,
     pub created_at: chrono::NaiveDateTime,
-    pub relation: Vec<LocalAnimeRelation>,
+    pub relation: Vec<AnimeRelation>,
 }
-
 pub async fn get_local_anime_data(
     db: sqlx::Pool<sqlx::MySql>,
     id: i32,
@@ -279,6 +305,39 @@ pub async fn get_local_anime_data(
         relation: vec![],
     })
 }
+pub async fn get_local_anime_datas(
+    db: sqlx::Pool<sqlx::MySql>,
+    ids: Vec<i32>,
+) -> Result<Vec<AnimeTableRow>, anyhow::Error> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+        r#"
+        SELECT
+            *
+        FROM
+            animes
+        WHERE
+            id IN ( 
+        "#,
+    );
+
+    for (i, id) in ids.iter().enumerate() {
+        query_builder.push_bind(id);
+        if i < ids.len() - 1 {
+            query_builder.push(", ");
+        }
+    }
+
+    query_builder.push(")");
+
+    let query = query_builder.build_query_as::<AnimeTableRow>();
+
+    let anime = query.fetch_all(&db).await?;
+
+    Ok(anime)
+}
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 #[serde(rename_all = "lowercase")]
@@ -290,7 +349,7 @@ pub enum ListStatus {
 
 #[derive(Debug, serde::Serialize, serde::Deserialize)]
 pub struct LocalAnineListResult {
-    pub animes: Vec<UserListAnime>,
+    pub animes: Vec<DBUserAnime>,
     pub status: ListStatus,
 }
 
@@ -325,9 +384,9 @@ pub async fn get_local_user_list(
             *
         FROM
             anime_relations
-        INNER JOIN animes ON animes.id = anime_relations.related_anime_id
+        INNER JOIN animes ON animes.id = anime_relations.relation_id
         WHERE
-            base_anime_id IN ( 
+            anime_id IN ( 
         "#,
     );
 
@@ -349,35 +408,34 @@ pub async fn get_local_user_list(
 
     for relation in relations {
         relations_map
-            .entry(relation.base_anime_id)
+            .entry(relation.anime_id)
             .or_insert_with(Vec::new)
             .push(relation);
     }
 
-    let local_animes: Vec<UserListAnime> = animes
-        .into_iter()
-        .map(|anime| {
-            let relations = relations_map.get(&anime.id).cloned().unwrap_or_default();
+    // let local_animes: Vec<UserListAnime> = animes
+    //     .into_iter()
+    //     .map(|anime| {
+    //         let relations = relations_map.get(&anime.id).cloned().unwrap_or_default();
 
-            UserListAnime {
-                id: anime.id,
-                english_title: anime.english_title,
-                romaji_title: anime.romaji_title,
-                status: anime.status,
-                picture: anime.picture,
-                updated_at: anime.updated_at,
-                created_at: anime.created_at,
-                relation: relations,
-                watch_priority: anime.watch_priority,
-                watch_status: anime.watch_status,
-                season: anime.season,
-                season_year: anime.season_year,
-            }
-        })
-        .collect();
+    //         UserListAnime {
+    //             id: anime.id,
+    //             english_title: anime.english_title,
+    //             romaji_title: anime.romaji_title,
+    //             status: anime.status,
+    //             picture: anime.picture,
+    //             updated_at: anime.updated_at,
+    //             created_at: anime.created_at,
+    //             watch_priority: anime.watch_priority,
+    //             watch_status: anime.watch_status,
+    //             season: anime.season,
+    //             season_year: anime.season_year,
+    //         }
+    //     })
+    //     .collect();
 
     Ok(LocalAnineListResult {
-        animes: local_animes,
+        animes,
         status: ListStatus::Imported,
     })
     // Ok(anime
@@ -463,9 +521,23 @@ anime{}: Media(idMal: $anime{}, type: ANIME) {
 "#;
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnilistErrorLocation {
+    pub line: i32,
+    pub column: i32,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+pub struct AnilistError {
+    pub message: String,
+    pub status: i32,
+    pub locations: Vec<AnilistErrorLocation>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnilistResponse {
     pub data: AnilistItems,
+    pub errors: Option<Vec<AnilistError>>,
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -587,16 +659,22 @@ pub struct AniListResult {
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
-struct GqlQuery {
+pub struct GqlQuery {
     query: String,
     variables: Value,
+}
+
+impl Display for GqlQuery {
+    fn fmt(&self, f: &mut Formatter<'_>) -> std::fmt::Result {
+        write!(f, "Query: {}\nvariables: {}", self.query, self.variables)
+    }
 }
 
 // max this can be is 17, if higher is needed, need to change the queue processor
 // to ensure it can grab the data from the query response
 pub const MAX_ANILIST_PER_QUERY: usize = 35;
 
-fn generate_gql_query(ids: Vec<i32>) -> GqlQuery {
+pub fn generate_gql_query(ids: Vec<i32>) -> GqlQuery {
     let mut ids = ids;
     if ids.len() > MAX_ANILIST_PER_QUERY {
         tracing::error!("Too many ids: {}", ids.len());
@@ -623,8 +701,6 @@ fn generate_gql_query(ids: Vec<i32>) -> GqlQuery {
 
     query.push('}');
 
-    // tracing::info!("Query: {}", query);
-
     GqlQuery { query, variables }
 }
 
@@ -639,6 +715,29 @@ fn get_header_i32(response: &Response, key: String, default: i32) -> i32 {
         .unwrap_or(default_str)
         .parse::<i32>()
         .unwrap_or(default)
+}
+
+pub fn get_error_ids(result: AnilistResponse, import_ids: Vec<i32>) -> Vec<i32> {
+    if result.errors.is_none() {
+        return vec![];
+    }
+
+    let errors = result.errors.unwrap();
+
+    let mut error_ids = vec![];
+    for error in errors {
+        for location in error.locations {
+            let line = location.line;
+            let query_lines = ANILIST_MEDIA_SELECTION.matches('\n').count();
+            let query_line = line / query_lines as i32;
+            let id = import_ids.get(query_line as usize);
+            if let Some(id) = id {
+                error_ids.push(*id);
+            }
+        }
+    }
+
+    error_ids
 }
 
 pub async fn get_animes_from_anilist(reqwest: Client, ids: Vec<i32>) -> AniListResult {
@@ -679,6 +778,9 @@ pub async fn get_animes_from_anilist(reqwest: Client, ids: Vec<i32>) -> AniListR
             Err(anyhow::Error::new(e))
         }
     };
+
+    // tracing::info!("query: {}", gql_query);
+    // tracing::info!("Got anime from Anilist: {:?}", anime);
 
     AniListResult {
         response: anime,

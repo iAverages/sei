@@ -1,7 +1,7 @@
 import { useDragDropContext } from "@thisbeyond/solid-dnd";
 import { createSortable } from "@thisbeyond/solid-dnd";
 import { Show, createSignal } from "solid-js";
-import { AnimeList, RelatedAnime } from "~/hooks/useAnimeList";
+import { Anime, ListStatus, ListStatusItem, UserListStatus } from "~/hooks/useAnimeList";
 
 import { Badge } from "~/components/ui/badge";
 import { cn } from "~/lib/utils";
@@ -24,11 +24,10 @@ import { isStatus } from "~/lib/status";
 
 type AnimeCardProps = {
     grouped?: boolean;
-    anime: AnimeList | (RelatedAnime & { watch_status?: string });
-    getAnimeUserList: (id: number) => AnimeList | undefined;
+    anime: Anime;
     disabled?: boolean;
     showOverlayInfo?: boolean;
-    hasNotWatchedPrequal: (id: number) => boolean;
+    listStatus?: ListStatusItem;
 };
 
 const Note = (props: { children: string; class?: string }) => {
@@ -42,14 +41,14 @@ const Note = (props: { children: string; class?: string }) => {
 const AnimeCardBadges = (props: AnimeCardProps) => {
     return (
         <div class={"absolute top-2 mr-2 flex w-full justify-end flex-col items-end gap-1 z-10"}>
-            <Show when={props.anime.watch_status === "ON_HOLD"}>
+            <Show when={props.listStatus.status === ListStatus.OnHold}>
                 <Note class={"bg-yellow-300 hover:bg-yellow-300"}>On Hold</Note>
             </Show>
-            <Show when={props.anime.watch_status === "DROPPED"}>
+            <Show when={props.listStatus.status === ListStatus.Dropped}>
                 <Note class={"bg-red-400 hover:bg-red-400"}>Dropped</Note>
             </Show>
 
-            <Show
+            {/* <Show
                 when={
                     typeof props.anime.relation !== "string" &&
                     props.anime.relation.filter((r) => isStatus(r, ["RELEASING"])).length > 0
@@ -65,8 +64,8 @@ const AnimeCardBadges = (props: AnimeCardProps) => {
             </Show>
             <Show when={props.hasNotWatchedPrequal(props.anime.id)}>
                 <Note class={"bg-red-400 hover:bg-red-400"}>Prequel Unwatched</Note>
-            </Show>
-            <Show when={!props.getAnimeUserList(props.anime.id)}>
+            </Show> */}
+            <Show when={!props.listStatus}>
                 <Note class={"bg-yellow-300 hover:bg-yellow-300"}>Not In List</Note>
             </Show>
         </div>
@@ -111,7 +110,7 @@ export const AnimeCardInner = (props: AnimeCardProps) => {
 };
 
 const AnimeCardWithContext = (props: AnimeCardProps & { isDraggable?: boolean; bringToFront: () => void }) => {
-    const [watchStatus, setWatchStatus] = createSignal(props.anime.watch_status);
+    const [watchStatus, setWatchStatus] = createSignal(props.listStatus?.status);
 
     return (
         <div class={"flex relative items-center justify-center w-full"}>
@@ -145,7 +144,7 @@ const AnimeCardWithContext = (props: AnimeCardProps & { isDraggable?: boolean; b
                                     <ContextMenuRadioGroup
                                         value={watchStatus()}
                                         onChange={(state) => {
-                                            setWatchStatus(state);
+                                            // setWatchStatus(state);
                                         }}>
                                         <ContextMenuRadioItem value="WATCHING">Watching</ContextMenuRadioItem>
                                         <ContextMenuRadioItem value="COMPLETED">Completed</ContextMenuRadioItem>

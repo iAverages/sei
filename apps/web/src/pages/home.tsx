@@ -2,14 +2,13 @@ import { useDragDropContext } from "@thisbeyond/solid-dnd";
 import { DragDropProvider, DragDropSensors, DragOverlay, SortableProvider, closestCenter } from "@thisbeyond/solid-dnd";
 import { For, Show, createEffect, createMemo, createSignal, onCleanup, onMount } from "solid-js";
 import { Button } from "~/components/ui/button";
-import { AnimeList, ListStatus, RelatedAnime, useAnimeList } from "~/hooks/useAnimeList";
 import { Accordion, AccordionContent, AccordionItem, AccordionTrigger } from "~/components/ui/accordion";
 import { Card, CardHeader, CardTitle } from "~/components/ui/card";
 import { isStatus, isWatchStatus } from "~/lib/status";
 import { AnimeCard, AnimeCardInner } from "~/components/anime-card";
 import { createUpdateListOrder } from "~/hooks/createUpdateListOrder";
 import { useBeforeLeave } from "@solidjs/router";
-import { AiOutlineMessage } from "solid-icons/ai";
+import { Anime, AnimeReleaseStatus, ListStatus, UserListStatus, useAnimeList } from "~/hooks/useAnimeList";
 
 // Fixes issue with being able to drag beyond some point
 // im assuimg the images break the layout and solid-dnd doesnt
@@ -42,29 +41,26 @@ const Fix = () => {
 };
 
 const c = () => {
-    return [] as (AnimeList | RelatedAnime)[];
+    return [] as Anime[];
 };
 
 export default function Home() {
     const [hasReordered, setHasReordered] = createSignal(false);
-    const anime = useAnimeList({ hasReordered });
+    const userList = useAnimeList({ hasReordered });
     const updateListOrder = createUpdateListOrder();
 
-    createEffect(() => {
-        if (anime.data?.status === "importing") {
-            setInterval(() => {
-                anime.refetch();
-            }, 1000);
-        }
-    });
+    const getUserListMeta = (anime: Anime) => {
+        const listStatus = userList.data?.list_status.find((l) => l.anime_id === anime.id);
+        return listStatus;
+    };
 
     const filteredAnimes = createMemo(() => {
-        if (!anime.data) {
+        if (!userList.data) {
             return {};
         }
 
         const watchingReleasing = c();
-        const watchingReleased = [] as AnimeList[];
+        const watchingReleased = [] as Anime[];
         const notWatchingReleasing = c();
         const hasSequel = c();
         const hasWatchedPrequal = c();
@@ -72,17 +68,21 @@ export default function Home() {
         const upcomingSequals = c();
         const sequalNotInList = c();
 
-        const seasonOnes = anime.data.animes.filter((a) => {
-            if (a.watch_status !== "COMPLETED" && a.status === "FINISHED") {
-                watchingReleased.push(a);
+        const seasonOnes = userList.data.animes.filter((anime) => {
+            const animeListStatus = getUserListMeta(anime);
+
+            if (animeListStatus?.status !== ListStatus.Completed && anime.status === AnimeReleaseStatus.Finished) {
+                watchingReleased.push(anime);
             }
 
-            if (a.watch_status !== "COMPLETED" && a.status === "RELEASING") {
-                watchingReleasing.push(a);
+            if (animeListStatus?.status !== ListStatus.Completed && anime.status === AnimeReleaseStatus.Releasing) {
+                watchingReleasing.push(anime);
             }
 
-            for (const r of a.relation) {
-                if (r.relation === "PREQUEL") {
+            const relations = userList.data.relations.filter((r) => r.anime_id === anime.id);
+
+            for (const relatedAnime of relations) {
+                if (relatedAnime.relation === "PREQUEL") {
                     return false;
                 }
             }
@@ -92,64 +92,53 @@ export default function Home() {
 
         for (const a of seasonOnes) {
             let index = 0;
-            for (const r of a.relation) {
-                index++;
-                if (r.relation === "SEQUEL") {
-                    hasSequel.push(a);
-                }
+            // for (const r of a.relation) {
+            //     index++;
+            //     if (r.relation === "SEQUEL") {
+            //         hasSequel.push(a);
+            //     }
 
-                const relationInUserList = anime.data.animes.find((a) => a.id === r.id);
+            //     const relationInUserList = anime.data.animes.find((a) => a.id === r.id);
 
-                if (!relationInUserList) {
-                    sequalNotInList.push(r);
-                }
+            //     if (!relationInUserList) {
+            //         sequalNotInList.push(r);
+            //     }
 
-                if (a.watch_status === "COMPLETED" && relationInUserList?.watch_status !== "COMPLETED") {
-                    hasWatchedPrequal.push(relationInUserList);
-                }
+            //     if (a.watch_status === "COMPLETED" && relationInUserList?.watch_status !== "COMPLETED") {
+            //         hasWatchedPrequal.push(relationInUserList);
+            //     }
 
-                const prev = a.relation[index - 1];
-                const prevList = anime.data.animes.find((a) => a.id === prev?.id);
+            //     const prev = a.relation[index - 1];
+            //     const prevList = anime.data.animes.find((a) => a.id === prev?.id);
 
-                if (
-                    isStatus(r, ["NOT_YET_RELEASED", "RELEASING"]) &&
-                    !isWatchStatus(a, ["COMPLETED"]) &&
-                    // a.watch_status !== "COMPLETED"
-                    (prevList?.watch_status !== "COMPLETED" || prevList === undefined)
-                ) {
-                    hasNotWatchedPrequal.push(prevList);
-                }
+            //     if (
+            //         isStatus(r, ["NOT_YET_RELEASED", "RELEASING"]) &&
+            //         !isWatchStatus(a, ["COMPLETED"]) &&
+            //         // a.watch_status !== "COMPLETED"
+            //         (prevList?.watch_status !== "COMPLETED" || prevList === undefined)
+            //     ) {
+            //         hasNotWatchedPrequal.push(prevList);
+            //     }
 
-                if (
-                    r.relation === "SEQUEL" &&
-                    (r.status === "RELEASING" || r.status === "NOT_YET_RELEASED") &&
-                    relationInUserList?.watch_status !== "WATCHING"
-                ) {
-                    upcomingSequals.push(relationInUserList || (r as unknown as AnimeList));
-                }
-            }
+            //     if (
+            //         r.relation === "SEQUEL" &&
+            //         (r.status === "RELEASING" || r.status === "NOT_YET_RELEASED") &&
+            //         relationInUserList?.watch_status !== "WATCHING"
+            //     ) {
+            //         upcomingSequals.push(relationInUserList || (r as unknown as AnimeList));
+            //     }
+            // }
         }
 
         return {
-            // watchingReleasing,
-            watchingReleased: watchingReleased.sort((a, b) => a.watch_priority - b.watch_priority),
-            // notWatchingReleasing,
-            // hasSequel,
-            // hasWatchedPrequal,
-            // hasNotWatchedPrequal: hasNotWatchedPrequal,
-            // seasonOnes,
+            watchingReleased: watchingReleased.sort((a, b) => {
+                const aStatus = userList.data.list_status.find((l) => l.anime_id === a.id);
+                const bStatus = userList.data.list_status.find((l) => l.anime_id === b.id);
+
+                return aStatus?.watch_priority - bStatus?.watch_priority;
+            }),
             upcomingSequals,
             sequalNotInList,
-            // watching,
-            // releasedIncomplete,
-            // releasingSequals,
-            // upcomingSequals,
-            // hasUpcomingSequalsNotWatchedPrequal,
-            // firstSeasonAnimes,
-            // seasonsWithMultipleSeasons: animeWithMultipleSeasons,
-            // unwatchedWithReleasingSequals,
-            // hasSecondSeasonInListWithoutPrequal,
-            // upcomingSequalsWithoutPrequalWatched,
         };
     });
 
@@ -170,7 +159,8 @@ export default function Home() {
 
             setHasReordered(
                 items().some((anime, index) => {
-                    if (anime?.watch_priority !== index + 1) {
+                    const userListItem = getUserListMeta(anime);
+                    if (userListItem?.watch_priority !== index + 1) {
                         return true;
                     }
                 })
@@ -178,28 +168,28 @@ export default function Home() {
         }
     };
 
-    const getAnimeUserList = (id: number) => {
-        return anime.data?.animes.find((a) => a.id === id);
-    };
+    // const getAnimeUserList = (id: number) => {
+    //     return userList.data?.animes.find((a) => a.id === id);
+    // };
 
-    const hasNotWatchedPrequal = (id: number) => {
-        const topLevel = anime.data?.animes.find((a) => a.id === id);
+    // const hasNotWatchedPrequal = (id: number) => {
+    //     const topLevel = userList.data?.animes.find((a) => a.id === id);
 
-        if (topLevel?.relation.filter((r) => r.relation === "PREQUEL").length === 0) {
-            return false;
-        }
+    //     if (topLevel?.relation.filter((r) => r.relation === "PREQUEL").length === 0) {
+    //         return false;
+    //     }
 
-        const related = anime.data?.animes.filter((a) => a.relation.find((r) => r.id === id));
+    //     const related = userList.data?.animes.filter((a) => a.relation.find((r) => r.id === id));
 
-        if (!topLevel && (!related || related.length === 0)) {
-            return false;
-        }
+    //     if (!topLevel && (!related || related.length === 0)) {
+    //         return false;
+    //     }
 
-        for (const r of related) {
-            if (!isWatchStatus(r, ["COMPLETED"])) return true;
-        }
-        return false;
-    };
+    //     for (const r of related) {
+    //         if (!isWatchStatus(r, ["COMPLETED"])) return true;
+    //     }
+    //     return false;
+    // };
 
     useBeforeLeave((e) => {
         if (updateListOrder.isPending) {
@@ -224,8 +214,8 @@ export default function Home() {
             </Button>
             <a href={"/login"}>login page</a>
 
-            <Show when={anime.data}>
-                <Show when={anime.data.status === ListStatus.Importing}>
+            <Show when={userList.data}>
+                <Show when={userList.data.import_status === UserListStatus.Importing}>
                     <Card>
                         <CardHeader>
                             <CardTitle>We are importing your list</CardTitle>
@@ -233,7 +223,7 @@ export default function Home() {
                     </Card>
                 </Show>
 
-                <Show when={anime.data.status === ListStatus.Updating}>
+                <Show when={userList.data.import_status === UserListStatus.Updating}>
                     <Card>
                         <CardHeader>
                             <CardTitle>We are updating your list.</CardTitle>
@@ -241,7 +231,7 @@ export default function Home() {
                     </Card>
                 </Show>
 
-                <Accordion multiple={false} collapsible>
+                {/* <Accordion multiple={false} collapsible>
                     <For
                         each={[
                             { key: "upcomingSequals", label: "Upcoming Sequals" },
@@ -272,7 +262,7 @@ export default function Home() {
                             </AccordionItem>
                         )}
                     </For>
-                </Accordion>
+                </Accordion> */}
 
                 <div class={"w-full h-1 bg-red-500"}></div>
 
@@ -285,11 +275,10 @@ export default function Home() {
                                 {(animeItem) => (
                                     <AnimeCard
                                         anime={animeItem}
-                                        disabled={updateListOrder.isPending || anime.isRefetching}
+                                        listStatus={getUserListMeta(animeItem)}
+                                        disabled={updateListOrder.isPending || userList.isRefetching}
                                         grouped
                                         showOverlayInfo
-                                        getAnimeUserList={getAnimeUserList}
-                                        hasNotWatchedPrequal={hasNotWatchedPrequal}
                                         bringToFront={() => {
                                             const index = items().findIndex((a) => a.id === animeItem.id);
                                             const updatedItems = items().slice();
@@ -305,8 +294,7 @@ export default function Home() {
                         {(draggable) => (
                             <AnimeCardInner
                                 anime={items().find((a) => a.id === draggable.id)}
-                                getAnimeUserList={getAnimeUserList}
-                                hasNotWatchedPrequal={hasNotWatchedPrequal}
+                                // getAnimeUserList={getAnimeUserList}
                             />
                         )}
                     </DragOverlay>

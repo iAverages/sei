@@ -50,10 +50,9 @@ model animes {
   season      String?
   season_year Int?
 
-  related_animes anime_relations[] @relation("related_anime")
-  base_animes    anime_relations[] @relation("base_anime")
-
-  anime_users anime_users[]
+  anime_users  anime_users[]
+  series       anime_series[] @relation(name: "series")
+  series_anime anime_series[] @relation(name: "anime")
 }
 
 enum Relation {
@@ -72,15 +71,33 @@ enum Relation {
   CONTAINS
 }
 
+// Used for relations between animes
+// Direct relations between animes
+// Season one is a prequel to season two
+// Season two is a sequel to season one
+// Season three is a sequel to season two
+// Season three is NOT a sequel to season one since it is not direct
 model anime_relations {
-  base_anime       animes @relation("base_anime", fields: [base_anime_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  base_anime_id    Int
-  related_anime    animes @relation("related_anime", fields: [related_anime_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
-  related_anime_id Int
+  anime_id    Int
+  relation_id Int
+  relation    Relation
 
-  relation Relation
+  @@id([anime_id, relation_id])
+}
 
-  @@id([base_anime_id, related_anime_id])
+// Used for generating a series of animes
+// A series is a group of animes that are related to each other
+// the series ID is the first anime in the series
+// normall season one but can be setup to be the "watch order" instead 
+// Import defaults to the watch order
+model anime_series {
+  series_id    Int // refers to the first anime in the seris, this is what we are using to group animes together
+  series       animes @relation(name: "series", fields: [series_id], references: [id])
+  anime_id     Int
+  anime        animes @relation(name: "anime", fields: [anime_id], references: [id])
+  series_order Int
+
+  @@id([series_id, anime_id])
 }
 
 model anime_users {

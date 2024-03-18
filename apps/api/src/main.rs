@@ -12,10 +12,11 @@ use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     sync::Arc,
+    time::Duration,
 };
 
 use axum::{
-    extract::FromRef,
+    extract::{FromRef, State},
     http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
@@ -30,6 +31,7 @@ use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, T
 use reqwest::Client;
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
+use tokio::time::timeout;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
@@ -51,7 +53,16 @@ fn create_oauth_client(api_url: String, client_id: String, client_secret: String
     .set_redirect_uri(RedirectUrl::new(redirect_url).expect("Invalid redirect URL"))
 }
 
-#[derive(Debug, Clone)]
+#[axum::debug_handler]
+async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
+    json_response!(StatusCode::OK, {
+        "queue": {
+            "total": state.import_queue.len(),
+        }
+    })
+}
+
+#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
 pub enum ImportQueueItem {
     UserAnime {
         times_in_queue: i32,
@@ -162,8 +173,17 @@ async fn main() {
                 .route("/order", post(routes::anime::update_list_order))
                 .route_layer(from_fn_with_state(state.clone(), guard))
                 .route("/anime/:id", get(routes::anime::get_anime))
+                .route(
+                    "/anime/:id/relations",
+                    get(routes::anime::get_anime_relations),
+                )
+                .route(
+                    "/anime/:id/import",
+                    get(routes::anime::get_anime_force_import),
+                )
                 .with_state(state.clone()),
         )
+        .route("/debug", get(debug_route))
         .route(
             "/oauth/mal/redirect",
             get(routes::oauth::handle_mal_redirect),

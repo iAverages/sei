@@ -1,10 +1,14 @@
-use std::{borrow::Borrow, time::Duration};
+use std::{os::linux::raw::stat, time::Duration};
 
-use sqlx::{MySql, Pool};
+use sqlx::{Execute, MySql, Pool, QueryBuilder};
 use tokio::time::timeout;
 
 use crate::{
-    anime::{self, CoverImage, RelationsEdge, Title, MAX_ANILIST_PER_QUERY},
+    anime::{
+        self, generate_gql_query, get_error_ids, get_local_anime_datas, AniListAnimeItem,
+        AniListResult, AnilistItems, AnilistResponse, AnimeTableRow, CoverImage, RelationsEdge,
+        Title, MAX_ANILIST_PER_QUERY,
+    },
     AppState, ImportQueueItem,
 };
 
@@ -43,8 +47,38 @@ pub async fn insert_anime(db: &Pool<MySql>, anime: InsertAnime) -> Result<(), sq
     Ok(())
 }
 
-async fn import_via_anilist(state: AppState, anime_id: i32) -> bool {
-    true
+async fn insert_animes(db: &Pool<MySql>, animes: Vec<InsertAnime>) -> Result<(), sqlx::Error> {
+    if animes.is_empty() {
+        return Ok(());
+    }
+    let mut query_builder = QueryBuilder::new(
+        r#"
+        INSERT INTO animes (id, romaji_title,  status, picture, season, season_year, updated_at)
+        "#,
+    );
+
+    let mut index = 0;
+    query_builder.push_values(animes.iter(), |mut b, anime| {
+        b.push_bind(anime.id_mal)
+            .push_bind(anime.title.romaji.clone())
+            .push_bind(anime.status.clone())
+            .push_bind(anime.cover_image.large.clone())
+            .push_bind(anime.season.clone())
+            .push_bind(anime.season_year)
+            .push_bind(chrono::Utc::now());
+
+        index += 1;
+    });
+
+    query_builder.push("ON DUPLICATE KEY UPDATE romaji_title = VALUES(romaji_title), status = VALUES(status), picture = VALUES(picture), season = VALUES(season), season_year = VALUES(season_year), updated_at = VALUES(updated_at)");
+
+    let q = query_builder.build();
+
+    q.execute(db).await.expect("Failed to insert anime");
+
+    tracing::info!("Inserted {} animes", index);
+
+    Ok(())
 }
 
 async fn anime_needs_importing(state: AppState, anime_id: i32) -> bool {
@@ -73,23 +107,231 @@ async fn anime_needs_importing(state: AppState, anime_id: i32) -> bool {
     true
 }
 
+async fn queue_related_animes(state: AppState, animes: Vec<AniListAnimeItem>) {
+    for anime in animes {
+        tracing::info!("Queueing related animes for {}", anime.id_mal.unwrap());
+
+        let valid_relations = anime
+            .relations
+            .as_ref()
+            .map(|r| {
+                r.edges
+                    .iter()
+                    .filter(|r| r.relation_type == "PREQUEL" || r.relation_type == "SEQUEL")
+                    .filter(|r| r.node.id_mal.is_some())
+                    .collect::<Vec<&RelationsEdge>>()
+            })
+            .unwrap_or(vec![]);
+
+        let local_relation_animes = get_local_anime_datas(
+            state.db.clone(),
+            valid_relations
+                .iter()
+                .map(|r| r.node.id_mal.unwrap())
+                .collect::<Vec<i32>>(),
+        )
+        .await
+        .unwrap();
+
+        let local_relations = local_relation_animes
+            .iter()
+            .filter(|a| {
+                let now = chrono::Utc::now().naive_utc();
+                let updated_at = a.updated_at;
+                let diff = now - updated_at;
+
+                if diff.num_hours() >= 1 {
+                    return false;
+                }
+                true
+            })
+            .collect::<Vec<&AnimeTableRow>>();
+
+        tracing::info!(
+            "Found {} related animes ({}) that need (re)importing",
+            local_relations.len(),
+            anime.id_mal.unwrap()
+        );
+
+        if valid_relations.is_empty() {
+            let local_anime =
+                anime::get_local_anime_data(state.db.clone(), anime.id_mal.unwrap()).await;
+            if local_anime.is_err() {
+                tracing::error!(
+                    "Anime {} not found in local database",
+                    anime.id_mal.unwrap()
+                );
+            }
+            let a = local_anime.unwrap();
+            let now = chrono::Utc::now().naive_utc();
+            let updated_at = a.updated_at;
+            let diff = now - updated_at;
+
+            if diff.num_hours() >= 1 {
+                tracing::info!("Building series relations");
+                build_series_group(state.clone(), anime).await;
+                return;
+            }
+            tracing::info!("No related animes to queue for {}", anime.id_mal.unwrap());
+            continue;
+        }
+
+        for relation in valid_relations {
+            let local_anime = local_relations
+                .iter()
+                .find(|a| a.id == relation.node.id_mal.unwrap());
+
+            if local_anime.is_none() {
+                state.import_queue.push(ImportQueueItem::Relationship {
+                    anime_id: relation.node.id_mal.unwrap(),
+                    related_anime_id: anime.id_mal.unwrap(),
+                    related_anime_type: relation.relation_type.clone(),
+                    times_in_queue: 0,
+                });
+            }
+        }
+    }
+    // let anime_relations = animes
+    //     .iter()
+    //     .flat_map(|a| {
+    //         a.relations
+    //             .as_ref()
+    //             .map(|r| {
+    //                 let related = r
+    //                     .edges
+    //                     .iter()
+    //                     .filter(|r| r.relation_type == "PREQUEL" || r.relation_type == "SEQUEL")
+    //                     .filter(|r| r.node.id_mal.is_some())
+    //                     .inspect(|r| {
+    //                         if a.id_mal.unwrap() == 31964 {
+    //                             tracing::info!(
+    //                                 "Found related anime: {} {}",
+    //                                 r.node.id_mal.unwrap(),
+    //                                 r.relation_type
+    //                             );
+    //                         }
+    //                     })
+    //                     .collect::<Vec<&RelationsEdge>>();
+
+    //                 related
+    //                     .iter()
+    //                     // Fuck you - https://avrg.dev/sei-gae-pout
+    //                     .filter(|r| r.node.id_mal.unwrap() != 125359)
+    //                     .map(|r| AnimeRelationInsertItem {
+    //                         anime_id: a.id_mal.unwrap(),
+    //                         related_anime_id: r.node.id_mal.unwrap(),
+    //                         relation: r.relation_type.to_owned(),
+    //                     })
+    //                     .collect::<Vec<AnimeRelationInsertItem>>()
+    //             })
+    //             .unwrap()
+    //     })
+    //     .collect::<Vec<AnimeRelationInsertItem>>();
+
+    // tracing::info!("Found {} related animes", anime_relations.len());
+    // let local_anime_data = get_local_anime_datas(
+    //     state.db,
+    //     anime_relations
+    //         .iter()
+    //         .map(|r| r.related_anime_id)
+    //         .collect::<Vec<i32>>(),
+    // )
+    // .await;
+
+    // let local_anime_ids = local_anime_data
+    //     .unwrap()
+    //     .iter()
+    //     // filter out all animes where the updated_at is less than 1 hour
+    //     .filter(|a| {
+    //         let now = chrono::Utc::now().naive_utc();
+    //         let updated_at = a.updated_at;
+    //         let diff = now - updated_at;
+
+    //         if diff.num_hours() >= 1 {
+    //             tracing::info!("Anime {} wil get reimported", a.id);
+    //             return true;
+    //         }
+    //         false
+    //     })
+    //     .map(|a| a.id)
+    //     .collect::<Vec<i32>>();
+
+    // let anime_relations = anime_relations
+    //     .iter()
+    //     // .filter(|r| !local_anime_ids.contains(&r.related_anime_id))
+    //     .collect::<Vec<&AnimeRelationInsertItem>>();
+
+    // if anime_relations.is_empty() {
+    //     tracing::info!("No related animes to queue");
+    //     return;
+    // }
+
+    // tracing::info!("Queueing {} related animes", anime_relations.len());
+    // anime_relations.iter().for_each(|relation| {
+    //     if local_anime_ids.contains(&relation.related_anime_id) {
+    //         tracing::info!(
+    //             "Anime {} is already in the database, skipping...",
+    //             relation.related_anime_id
+    //         );
+    //         return;
+    //     }
+    //     state.import_queue.push(ImportQueueItem::Relationship {
+    //         times_in_queue: 0,
+    //         anime_id: relation.anime_id,
+    //         related_anime_id: relation.related_anime_id,
+    //         related_anime_type: relation.relation.clone(),
+    //     });
+    // });
+}
+
+async fn add_anime_to_series(
+    state: AppState,
+    series_id: i32,
+    anime_id: i32,
+    series_order: i32,
+) -> bool {
+    tracing::info!("Adding {} to series {}", series_id, anime_id,);
+    let relation_isert_result = sqlx::query!(
+        r#"
+                INSERT INTO anime_series (series_id, anime_id, series_order)
+                VALUES (?, ?, ?)
+                ON DUPLICATE KEY UPDATE series_id = ?, anime_id = ?, series_order = ?
+                "#,
+        series_id,
+        anime_id,
+        series_order,
+        series_id,
+        anime_id,
+        series_order,
+    )
+    .execute(&state.db)
+    .await;
+
+    if let Err(e) = relation_isert_result {
+        tracing::error!("Failed to insert relation link: {}", e);
+        return false;
+    }
+
+    true
+}
+
 async fn add_anime_relation(
     state: AppState,
     anime_id: i32,
     related_anime_id: i32,
     relation: String,
 ) -> bool {
-    tracing::info!(
-        "Adding relation between anime {} and {}",
-        anime_id,
-        related_anime_id
-    );
+    // tracing::info!(
+    //     "Adding relation between anime {} and {}",
+    //     anime_id,
+    //     related_anime_id
+    // );
     let relation_isert_result = sqlx::query!(
         r#"
-                INSERT INTO anime_relations (base_anime_id, related_anime_id, relation)
-                VALUES (?, ?, ?)
-                ON DUPLICATE KEY UPDATE base_anime_id = ?, related_anime_id = ?, relation = ?
-                "#,
+        INSERT INTO anime_relations (anime_id, relation_id, relation)
+        VALUES (?, ?, ?)
+        ON DUPLICATE KEY UPDATE anime_id = ?, relation_id = ?, relation = ?
+        "#,
         related_anime_id,
         anime_id,
         relation,
@@ -114,11 +356,11 @@ async fn add_user_anime(
     user_id: String,
     anime_watch_status: String,
 ) -> bool {
-    tracing::info!(
-        "Adding user anime between anime {} and user {}",
-        anime_id,
-        user_id
-    );
+    // tracing::info!(
+    //     "Adding user anime between anime {} and user {}",
+    //     anime_id,
+    //     user_id
+    // );
     let relation_isert_result = sqlx::query!(
         r#"
                 INSERT INTO anime_users (anime_id, user_id, status)
@@ -143,171 +385,298 @@ async fn add_user_anime(
     true
 }
 
+async fn get_queue_items(state: AppState, max: usize) -> Vec<ImportQueueItem> {
+    let mut process_items = vec![];
+    for _ in 0..max {
+        let item = timeout(Duration::from_millis(500), state.import_queue.pop()).await;
+
+        if let Ok(item) = item {
+            let times_in_queue = match &item {
+                ImportQueueItem::Anime { times_in_queue, .. } => times_in_queue,
+                ImportQueueItem::Relationship { times_in_queue, .. } => times_in_queue,
+                ImportQueueItem::UserAnime { times_in_queue, .. } => times_in_queue,
+            };
+            let anime_id = match &item {
+                ImportQueueItem::Anime { anime_id, .. } => anime_id,
+                ImportQueueItem::Relationship { anime_id, .. } => anime_id,
+                ImportQueueItem::UserAnime { anime_id, .. } => anime_id,
+            };
+
+            if times_in_queue > &5 {
+                tracing::warn!(
+                    "Anime {} has been in queue for too long, skipping...",
+                    anime_id
+                );
+                continue;
+            }
+
+            process_items.push(item);
+        } else {
+            break;
+        }
+    }
+
+    process_items
+}
+
+fn get_id_for_import(item: &ImportQueueItem) -> i32 {
+    match item {
+        ImportQueueItem::Anime { anime_id, .. } => *anime_id,
+        ImportQueueItem::Relationship { anime_id, .. } => *anime_id,
+        ImportQueueItem::UserAnime { anime_id, .. } => *anime_id,
+    }
+}
+
+fn get_ids_for_import(items: Vec<ImportQueueItem>) -> Vec<i32> {
+    items.iter().map(get_id_for_import).collect()
+}
+
+fn get_anime_from_anilist_result(result: AnilistResponse, i: usize) -> Option<AniListAnimeItem> {
+    match i {
+        0 => result.data.anime1,
+        1 => result.data.anime2,
+        2 => result.data.anime3,
+        3 => result.data.anime4,
+        4 => result.data.anime5,
+        5 => result.data.anime6,
+        6 => result.data.anime7,
+        7 => result.data.anime8,
+        8 => result.data.anime9,
+        9 => result.data.anime10,
+        10 => result.data.anime11,
+        11 => result.data.anime12,
+        12 => result.data.anime13,
+        13 => result.data.anime14,
+        14 => result.data.anime15,
+        15 => result.data.anime16,
+        16 => result.data.anime17,
+        17 => result.data.anime18,
+        18 => result.data.anime19,
+        19 => result.data.anime20,
+        20 => result.data.anime21,
+        21 => result.data.anime22,
+        22 => result.data.anime23,
+        23 => result.data.anime24,
+        24 => result.data.anime25,
+        25 => result.data.anime26,
+        26 => result.data.anime27,
+        27 => result.data.anime28,
+        28 => result.data.anime29,
+        29 => result.data.anime30,
+        30 => result.data.anime31,
+        31 => result.data.anime32,
+        32 => result.data.anime33,
+        33 => result.data.anime34,
+        34 => result.data.anime35,
+        _ => None,
+    }
+}
+
+async fn get_ids_for_update(db: sqlx::Pool<MySql>, items: Vec<i32>) -> Vec<i32> {
+    let local_data = anime::get_local_anime_datas(db, items)
+        .await
+        .unwrap_or(vec![]);
+
+    local_data
+        .iter()
+        .filter(|d| {
+            let now = chrono::Utc::now().naive_utc();
+            let updated_at = d.updated_at;
+            let diff = now - updated_at;
+
+            if diff.num_hours() > 1 {
+                tracing::info!(
+                    "Anime {} was last updated more than 1 hour ago, reimporting",
+                    d.id
+                );
+                return true;
+            }
+
+            false
+        })
+        .map(|d| d.id)
+        .collect()
+}
+
+struct AnimeIds {
+    id: i32,
+}
+
+struct AnimeRelationInsertItem {
+    anime_id: i32,
+    related_anime_id: i32,
+    relation: String,
+}
+
+#[derive(Debug)]
+struct SeriesRelations {
+    anime_id: Option<i32>,
+    relation_id: Option<i32>,
+    relation: Option<String>,
+}
+
+async fn build_series_group(state: AppState, anime: AniListAnimeItem) {
+    let series_id = anime.id_mal.unwrap();
+
+    let query = sqlx::query_as!(
+        SeriesRelations,
+        r#"
+        WITH RECURSIVE related AS (
+            SELECT anime_id, relation_id, relation
+            FROM anime_relations
+            WHERE anime_id = ?
+        
+            UNION ALL
+        
+            SELECT t.anime_id, t.relation_id, t.relation
+            FROM anime_relations t
+            JOIN related r ON t.anime_id = r.relation_id
+        )
+    
+        SELECT * FROM related;
+    "#,
+        series_id,
+    );
+
+    let data = query.fetch_all(&state.db).await;
+
+    if let Err(e) = data {
+        tracing::error!("Failed to get series relations: {}", e);
+        return;
+    }
+
+    let data = data.unwrap();
+
+    println!("{:?}", data);
+}
+
 pub fn import_queue_worker(state: AppState) {
     tokio::spawn(async move {
         tracing::info!("Starting import queue worker...");
 
         loop {
-            let mut process_items = vec![];
-            for _ in 0..MAX_ANILIST_PER_QUERY {
-                let item = timeout(Duration::from_millis(500), state.import_queue.pop()).await;
+            tracing::info!("Items in queue: {}", state.import_queue.len());
+            let queue_items = get_queue_items(state.clone(), MAX_ANILIST_PER_QUERY).await;
 
-                if let Ok(item) = item {
-                    let times_in_queue = match &item {
-                        ImportQueueItem::Anime { times_in_queue, .. } => times_in_queue,
-                        ImportQueueItem::Relationship { times_in_queue, .. } => times_in_queue,
-                        ImportQueueItem::UserAnime { times_in_queue, .. } => times_in_queue,
-                    };
-                    let anime_id = match &item {
-                        ImportQueueItem::Anime { anime_id, .. } => anime_id,
-                        ImportQueueItem::Relationship { anime_id, .. } => anime_id,
-                        ImportQueueItem::UserAnime { anime_id, .. } => anime_id,
-                    };
-
-                    if times_in_queue > &5 {
-                        tracing::warn!(
-                            "Anime {} has been in queue for too long, skipping...",
-                            anime_id
-                        );
-                        continue;
-                    }
-
-                    process_items.push(item);
-                } else {
-                    break;
-                }
-            }
-
-            if process_items.is_empty() {
+            if queue_items.is_empty() {
                 tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
                 continue;
             }
 
-            let mut needs_fetching_id: Vec<ImportQueueItem> = vec![];
+            let import_ids = get_ids_for_import(queue_items.clone());
 
-            for queue_item in process_items.clone() {
-                match queue_item {
-                    ImportQueueItem::Anime {
-                        anime_id,
-                        times_in_queue: _,
-                    } => {
-                        if anime_needs_importing(state.clone(), anime_id).await {
-                            needs_fetching_id.push(queue_item.clone());
-                        }
-                    }
-                    ImportQueueItem::Relationship {
-                        anime_id,
-                        related_anime_id,
-                        related_anime_type,
-                        times_in_queue,
-                    } => {
-                        let needs_importing = anime_needs_importing(state.clone(), anime_id).await;
-                        if !needs_importing {
-                            let relation_inserted = add_anime_relation(
-                                state.clone(),
-                                anime_id,
-                                related_anime_id,
-                                related_anime_type.clone(),
-                            )
-                            .await;
-
-                            if relation_inserted {
-                                continue;
-                            }
-                        }
-
-                        needs_fetching_id.push(ImportQueueItem::Relationship {
-                            anime_id,
-                            related_anime_id,
-                            related_anime_type,
-                            times_in_queue: times_in_queue + 1,
-                        });
-                    }
-                    ImportQueueItem::UserAnime {
-                        anime_id,
-                        user_id,
-                        anime_watch_status,
-                        times_in_queue,
-                    } => {
-                        let needs_importing = anime_needs_importing(state.clone(), anime_id).await;
-                        if !needs_importing {
-                            let relation_inserted = add_user_anime(
-                                state.clone(),
-                                anime_id,
-                                user_id.clone(),
-                                anime_watch_status.clone(),
-                            )
-                            .await;
-
-                            if relation_inserted {
-                                continue;
-                            }
-                        }
-
-                        needs_fetching_id.push(ImportQueueItem::UserAnime {
-                            anime_id,
-                            user_id,
-                            anime_watch_status,
-                            times_in_queue: times_in_queue + 1,
-                        });
-                    }
-                }
-            }
-
-            if needs_fetching_id.is_empty() {
+            if import_ids.is_empty() {
                 continue;
             }
 
-            let mut import_ids: Vec<i32> = vec![];
+            tracing::info!(
+                "Fetching anime data for {}",
+                import_ids
+                    .iter()
+                    .map(|id| id.to_string())
+                    .collect::<Vec<String>>()
+                    .join(", ")
+            );
 
-            for id in needs_fetching_id.clone() {
-                match id {
-                    ImportQueueItem::Anime { anime_id, .. } => {
-                        import_ids.push(anime_id);
-                    }
-                    ImportQueueItem::Relationship { anime_id, .. } => {
-                        import_ids.push(anime_id);
-                    }
-                    ImportQueueItem::UserAnime { anime_id, .. } => {
-                        import_ids.push(anime_id);
-                    }
-                }
-            }
+            let anilist_result =
+                anime::get_animes_from_anilist(state.reqwest.clone(), import_ids.clone()).await;
 
-            let import_ids2 = import_ids.clone();
-
-            let result = anime::get_animes_from_anilist(state.reqwest.clone(), import_ids2).await;
-
-            if result.retry_after != -1 {
-                tracing::warn!("Rate limit hit, sleeping for {}", result.retry_after);
-                tracing::info!(
-                    "Adding {} back to queue",
-                    import_ids
-                        .iter()
-                        .map(|id| id.to_string())
-                        .collect::<Vec<String>>()
-                        .join(", ")
+            if anilist_result.retry_after != -1 {
+                tracing::warn!(
+                    "Rate limit hit, sleeping for {}",
+                    anilist_result.retry_after
                 );
 
-                for item in needs_fetching_id.iter() {
-                    state.import_queue.push(item.clone());
+                for id in import_ids.iter() {
+                    let item = queue_items
+                        .iter()
+                        .find(|item| get_id_for_import(item) == *id);
+                    state.import_queue.push(item.unwrap().clone());
                 }
-                tokio::time::sleep(tokio::time::Duration::from_secs(result.retry_after as u64))
-                    .await;
+
+                tokio::time::sleep(tokio::time::Duration::from_secs(
+                    anilist_result.retry_after as u64,
+                ))
+                .await;
             }
 
-            let ani_result = match result.response {
+            let anilist_response = match anilist_result.response {
                 Ok(data) => data,
                 Err(e) => {
                     tracing::error!("Failed to get anime: {}, readding to queue", e);
 
                     import_ids.iter().for_each(|id| {
-                        let item = needs_fetching_id.iter().find(|item| match item {
+                        let item = queue_items.iter().find(|item| match item {
                             ImportQueueItem::Anime { anime_id, .. } => *anime_id == *id,
                             ImportQueueItem::Relationship { anime_id, .. } => *anime_id == *id,
                             ImportQueueItem::UserAnime { anime_id, .. } => *anime_id == *id,
                         });
-                        let times_in_queue = match item {
+                        match item {
+                            Some(ImportQueueItem::Anime { times_in_queue, .. }) => {
+                                state.import_queue.push(ImportQueueItem::Anime {
+                                    anime_id: *id,
+                                    times_in_queue: times_in_queue + 1,
+                                })
+                            }
+                            Some(ImportQueueItem::Relationship {
+                                times_in_queue,
+                                anime_id,
+                                related_anime_id,
+                                related_anime_type,
+                            }) => state.import_queue.push(ImportQueueItem::Relationship {
+                                anime_id: *anime_id,
+                                related_anime_id: *related_anime_id,
+                                related_anime_type: related_anime_type.clone(),
+                                times_in_queue: times_in_queue + 1,
+                            }),
+                            _ => {}
+                        };
+                    });
+                    continue;
+                }
+            };
+
+            let mut animes = vec![];
+            let error_ids = get_error_ids(anilist_response.clone(), import_ids.clone());
+            if !error_ids.is_empty() {
+                tracing::warn!(
+                    "Failed to get anime data for: {}",
+                    error_ids
+                        .iter()
+                        .map(|id| id.to_string())
+                        .collect::<Vec<String>>()
+                        .join(", ")
+                );
+                let requeue_ids = queue_items
+                    .iter()
+                    .filter_map(|item| {
+                        let id = match item {
+                            ImportQueueItem::Anime { anime_id, .. } => anime_id,
+                            ImportQueueItem::Relationship { anime_id, .. } => anime_id,
+                            ImportQueueItem::UserAnime { anime_id, .. } => anime_id,
+                        };
+
+                        if !error_ids.contains(id) {
+                            return Some(item.clone());
+                        }
+                        None
+                    })
+                    .collect::<Vec<ImportQueueItem>>();
+
+                for item in requeue_ids {
+                    state.import_queue.push(item);
+                }
+            } else {
+                for (index, id) in import_ids.iter().enumerate() {
+                    let anime_data = get_anime_from_anilist_result(anilist_response.clone(), index);
+
+                    if anime_data.is_none() {
+                        tracing::warn!("Anime {} not found in response, readding to queue...", id);
+
+                        let times_in_queue = match queue_items
+                            .iter()
+                            .find(|item| get_id_for_import(item) == *id)
+                        {
                             Some(ImportQueueItem::Anime { times_in_queue, .. }) => {
                                 times_in_queue + 1
                             }
@@ -323,500 +692,539 @@ pub fn import_queue_worker(state: AppState) {
                         state.import_queue.push(ImportQueueItem::Anime {
                             anime_id: *id,
                             times_in_queue,
-                        })
-                    });
-                    continue;
-                }
-            };
+                        });
 
-            for i in 0..import_ids.len() {
-                let queue_item = needs_fetching_id
-                    .iter()
-                    .find(|item| match item {
-                        ImportQueueItem::Anime { anime_id, .. } => *anime_id == import_ids[i],
-                        ImportQueueItem::Relationship { anime_id, .. } => {
-                            *anime_id == import_ids[i]
-                        }
-                        ImportQueueItem::UserAnime { anime_id, .. } => *anime_id == import_ids[i],
-                    })
-                    .unwrap();
-
-                let anime = match i {
-                    0 => ani_result.data.anime1.as_ref(),
-                    1 => ani_result.data.anime2.as_ref(),
-                    2 => ani_result.data.anime3.as_ref(),
-                    3 => ani_result.data.anime4.as_ref(),
-                    4 => ani_result.data.anime5.as_ref(),
-                    5 => ani_result.data.anime6.as_ref(),
-                    6 => ani_result.data.anime7.as_ref(),
-                    7 => ani_result.data.anime8.as_ref(),
-                    8 => ani_result.data.anime9.as_ref(),
-                    9 => ani_result.data.anime10.as_ref(),
-                    10 => ani_result.data.anime11.as_ref(),
-                    11 => ani_result.data.anime12.as_ref(),
-                    12 => ani_result.data.anime13.as_ref(),
-                    13 => ani_result.data.anime14.as_ref(),
-                    14 => ani_result.data.anime15.as_ref(),
-                    15 => ani_result.data.anime16.as_ref(),
-                    16 => ani_result.data.anime17.as_ref(),
-                    17 => ani_result.data.anime18.as_ref(),
-                    18 => ani_result.data.anime19.as_ref(),
-                    19 => ani_result.data.anime20.as_ref(),
-                    20 => ani_result.data.anime21.as_ref(),
-                    21 => ani_result.data.anime22.as_ref(),
-                    22 => ani_result.data.anime23.as_ref(),
-                    23 => ani_result.data.anime24.as_ref(),
-                    24 => ani_result.data.anime25.as_ref(),
-                    25 => ani_result.data.anime26.as_ref(),
-                    26 => ani_result.data.anime27.as_ref(),
-                    27 => ani_result.data.anime28.as_ref(),
-                    28 => ani_result.data.anime29.as_ref(),
-                    29 => ani_result.data.anime30.as_ref(),
-                    30 => ani_result.data.anime31.as_ref(),
-                    31 => ani_result.data.anime32.as_ref(),
-                    32 => ani_result.data.anime33.as_ref(),
-                    33 => ani_result.data.anime34.as_ref(),
-                    34 => ani_result.data.anime35.as_ref(),
-                    _ => None,
-                };
-
-                if anime.is_none() {
-                    tracing::warn!(
-                        "Anime {} not found in response, readding to queue...",
-                        import_ids[i]
-                    );
-                    let times_in_queue = match queue_item {
-                        ImportQueueItem::Anime { times_in_queue, .. } => times_in_queue + 1,
-                        ImportQueueItem::Relationship { times_in_queue, .. } => times_in_queue + 1,
-                        ImportQueueItem::UserAnime { times_in_queue, .. } => times_in_queue + 1,
-                    };
-
-                    state.import_queue.push(ImportQueueItem::Anime {
-                        anime_id: import_ids[i],
-                        times_in_queue,
-                    });
-                    continue;
-                }
-
-                let anime = anime.unwrap();
-
-                if anime.id_mal.is_none() {
-                    tracing::warn!("Anime has no MAL ID, skipping...");
-                    continue;
-                }
-
-                tracing::info!("Importing {} into database", anime.id_mal.unwrap());
-
-                let insert_result = insert_anime(
-                    &state.db,
-                    InsertAnime {
-                        cover_image: anime.cover_image.clone(),
-                        id_mal: anime.id_mal.unwrap(),
-                        status: anime.status.clone(),
-                        title: anime.title.clone(),
-                        season: anime.season.clone(),
-                        season_year: anime.season_year,
-                    },
-                );
-
-                if let Err(e) = insert_result.await {
-                    tracing::error!("Failed to insert anime: {}", e);
-                    import_ids.iter().for_each(|id| {
-                        state.import_queue.push(ImportQueueItem::Anime {
-                            anime_id: *id,
-                            times_in_queue: 0,
-                        })
-                    });
-                    continue;
-                }
-
-                match queue_item {
-                    ImportQueueItem::Relationship {
-                        related_anime_id,
-                        related_anime_type,
-                        ..
-                    } => {
-                        let relation_insert_result = add_anime_relation(
-                            state.clone(),
-                            anime.id_mal.unwrap(),
-                            *related_anime_id,
-                            related_anime_type.clone(),
-                        )
-                        .await;
-
-                        if !relation_insert_result {
-                            tracing::error!(
-                                "Failed to insert relation between anime {} and {}",
-                                anime.id_mal.unwrap(),
-                                related_anime_id
-                            );
-                            continue;
-                        }
-                    }
-                    ImportQueueItem::UserAnime {
-                        user_id,
-                        anime_watch_status,
-                        ..
-                    } => {
-                        let relation_inserted = add_user_anime(
-                            state.clone(),
-                            anime.id_mal.unwrap(),
-                            user_id.clone(),
-                            anime_watch_status.clone(),
-                        )
-                        .await;
-
-                        if !relation_inserted {
-                            tracing::error!(
-                                "Failed to insert user anime between anime {} and user {}",
-                                anime.id_mal.unwrap(),
-                                user_id
-                            );
-                            continue;
-                        }
-                    }
-                    _ => {}
-                }
-
-                let relation = anime.relations.clone();
-
-                if relation.is_none() {
-                    tracing::info!(
-                        "Anime {} has no relations, skipping...",
-                        anime.id_mal.unwrap()
-                    );
-                    continue;
-                }
-
-                let relation = relation.unwrap();
-
-                tracing::info!(
-                    "Anime {} has {} related animes",
-                    anime.id_mal.unwrap(),
-                    relation.edges.len()
-                );
-
-                let relation: Vec<RelationsEdge> = relation
-                    .edges
-                    .into_iter()
-                    .filter(|r| r.relation_type == "PREQUEL" || r.relation_type == "SEQUEL")
-                    .filter(|r| r.node.id_mal.is_some())
-                    .collect();
-
-                for related in relation {
-                    if related.node.id_mal.is_none() {
-                        tracing::warn!("Related anime has no MAL ID, skipping...");
                         continue;
                     }
-                    tracing::info!(
-                        "Adding related anime {} to import queue",
-                        related.node.id_mal.unwrap()
-                    );
-                    state.import_queue.push(ImportQueueItem::Relationship {
-                        anime_id: related.node.id_mal.unwrap(),
-                        related_anime_id: anime.id_mal.unwrap(),
-                        related_anime_type: related.relation_type,
-                        times_in_queue: 0,
-                    });
-                }
 
-                tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+                    let anime_data = anime_data.unwrap();
+                    animes.push(anime_data);
+                }
             }
 
-            tracing::info!(
-                "Imported anime {}",
-                import_ids
+            if animes.is_empty() {
+                continue;
+            }
+
+            let insert_result = insert_animes(
+                &state.db,
+                animes
                     .iter()
-                    .map(|id| id.to_string())
-                    .collect::<Vec<String>>()
-                    .join(", ")
-            );
+                    .map(|a| InsertAnime {
+                        cover_image: a.cover_image.clone(),
+                        id_mal: a.id_mal.unwrap(),
+                        status: a.status.clone(),
+                        title: a.title.clone(),
+                        season: a.season.clone(),
+                        season_year: a.season_year,
+                    })
+                    .collect(),
+            )
+            .await;
 
-            // tracing::info!(
-            //     "Importing anime: {}",
-            //     ids.clone()
-            //         .iter()
-            //         .map(|id| id.anime_id.to_string())
-            //         .collect::<Vec<String>>()
-            //         .join(", ")
-            // );
+            if let Err(e) = insert_result {
+                tracing::error!("Failed to insert anime: {}", e);
+                import_ids.iter().for_each(|id| {
+                    state.import_queue.push(ImportQueueItem::Anime {
+                        anime_id: *id,
+                        times_in_queue: 0,
+                    })
+                });
+                continue;
+            }
 
-            // let mut import_ids: Vec<i32> = vec![];
+            let user_anime_inserts = import_ids
+                .iter()
+                .filter_map(|id| {
+                    queue_items.iter().find(|item| match item {
+                        ImportQueueItem::UserAnime { anime_id, .. } => anime_id == id,
+                        _ => false,
+                    })
+                })
+                .collect::<Vec<&ImportQueueItem>>();
 
-            // for id in ids.clone() {
-            //     let local_data = anime::get_local_anime_data(state.db.clone(), id.anime_id).await;
+            // TODO: Make both of these into bulk inserts
+            for user_anime in user_anime_inserts {
+                let anime_id = match user_anime {
+                    ImportQueueItem::UserAnime { anime_id, .. } => *anime_id,
+                    _ => continue,
+                };
 
-            //     if let Ok(local_data) = local_data {
-            //         let now = chrono::Utc::now().naive_utc();
-            //         let updated_at = local_data.updated_at;
-            //         let diff = now - updated_at;
+                let user_id = match user_anime {
+                    ImportQueueItem::UserAnime { user_id, .. } => user_id.clone(),
+                    _ => continue,
+                };
 
-            //         if diff.num_hours() < 1 {
-            //             tracing::info!(
-            //                 "Anime {} was updated less than 1 hour ago, skipping",
-            //                 id.anime_id
-            //             );
-            //             continue;
-            //         }
-            //         tracing::info!(
-            //             "Anime {} was last updated more than 1 hour ago, reimporting",
-            //             id.anime_id
-            //         );
-            //         import_ids.push(id.anime_id);
-            //     } else {
-            //         tracing::info!("Anime {} not found in local database", id.anime_id);
-            //         import_ids.push(id.anime_id);
-            //     }
-            // }
+                let anime_watch_status = match user_anime {
+                    ImportQueueItem::UserAnime {
+                        anime_watch_status, ..
+                    } => anime_watch_status.clone(),
+                    _ => continue,
+                };
 
-            // if import_ids.is_empty() {
-            //     for item in ids.iter() {
-            //         if item.user_id.is_none() {
-            //             continue;
-            //         }
-            //         sqlx::query!(
-            //             r#"
-            //             INSERT INTO anime_users (anime_id, user_id)
-            //             VALUES
-            //                 (?, ?)
-            //             "#,
-            //             item.anime_id,
-            //             item.user_id
-            //         )
-            //         .execute(&state.db)
-            //         .await
-            //         .expect("Failed to insert anime_user");
-            //     }
-            //     continue;
-            // }
+                let user_anime_insert_result = add_user_anime(
+                    state.clone(),
+                    anime_id,
+                    user_id.clone(),
+                    anime_watch_status.clone(),
+                )
+                .await;
 
-            // // Adds delay between sending requests to Anilist
-            // tokio::time::sleep(tokio::time::Duration::from_secs(1)).await;
+                if !user_anime_insert_result {
+                    tracing::error!(
+                        "Failed to insert user anime {} for user {}",
+                        anime_id,
+                        user_id
+                    );
+                    continue;
+                }
+            }
 
-            // let import_ids2 = import_ids.clone();
-            // let result = anime::get_animes_from_anilist(state.reqwest.clone(), import_ids2).await;
+            queue_related_animes(state.clone(), animes).await;
 
-            // if result.retry_after != -1 {
-            //     tracing::warn!("Rate limit hit, sleeping for {}", result.retry_after);
-            //     tracing::info!(
-            //         "Adding {} back to queue",
-            //         import_ids
-            //             .iter()
-            //             .map(|id| id.to_string())
-            //             .collect::<Vec<String>>()
-            //             .join(", ")
-            //     );
-            //     tokio::time::sleep(tokio::time::Duration::from_secs(result.retry_after as u64))
-            //         .await;
-            // }
+            let relation_inserts = import_ids
+                .iter()
+                .filter_map(|id| {
+                    queue_items.iter().find(|item| match item {
+                        ImportQueueItem::Relationship { anime_id, .. } => anime_id == id,
+                        _ => false,
+                    })
+                })
+                .collect::<Vec<&ImportQueueItem>>();
 
-            // let ani_result = match result.response {
-            //     Ok(data) => data,
-            //     Err(e) => {
-            //         tracing::error!("Failed to get anime: {}, readding to queue", e);
-            //         import_ids.iter().for_each(|id| {
-            //             state.import_queue.push(ImportQueueItem {
-            //                 anime_id: *id,
-            //                 ..Default::default()
-            //             })
-            //         });
-            //         continue;
-            //     }
-            // };
+            for relation in relation_inserts {
+                let anime_id = match relation {
+                    ImportQueueItem::Relationship { anime_id, .. } => *anime_id,
+                    _ => continue,
+                };
 
-            // for i in 0..import_ids.len() {
-            //     let queue_item = ids
-            //         .iter()
-            //         .find(|item| item.anime_id == import_ids[i])
-            //         .unwrap();
-            //     let anime = match i {
-            //         0 => ani_result.data.anime1.as_ref(),
-            //         1 => ani_result.data.anime2.as_ref(),
-            //         2 => ani_result.data.anime3.as_ref(),
-            //         3 => ani_result.data.anime4.as_ref(),
-            //         4 => ani_result.data.anime5.as_ref(),
-            //         5 => ani_result.data.anime6.as_ref(),
-            //         6 => ani_result.data.anime7.as_ref(),
-            //         7 => ani_result.data.anime8.as_ref(),
-            //         8 => ani_result.data.anime9.as_ref(),
-            //         9 => ani_result.data.anime10.as_ref(),
-            //         10 => ani_result.data.anime11.as_ref(),
-            //         11 => ani_result.data.anime12.as_ref(),
-            //         12 => ani_result.data.anime13.as_ref(),
-            //         13 => ani_result.data.anime14.as_ref(),
-            //         14 => ani_result.data.anime15.as_ref(),
-            //         15 => ani_result.data.anime16.as_ref(),
-            //         16 => ani_result.data.anime17.as_ref(),
-            //         17 => ani_result.data.anime18.as_ref(),
-            //         18 => ani_result.data.anime19.as_ref(),
-            //         19 => ani_result.data.anime20.as_ref(),
-            //         _ => None,
-            //     };
+                let related_anime_id = match relation {
+                    ImportQueueItem::Relationship {
+                        related_anime_id, ..
+                    } => *related_anime_id,
+                    _ => continue,
+                };
 
-            //     if anime.is_none() {
-            //         tracing::warn!(
-            //             "Anime {} not found in response, readding to queue...",
-            //             import_ids[i]
-            //         );
-            //         state.import_queue.push(ImportQueueItem::Anime {
-            //             anime_id: import_ids[i],
-            //         });
-            //         continue;
-            //     }
+                let related_anime_type = match relation {
+                    ImportQueueItem::Relationship {
+                        related_anime_type, ..
+                    } => related_anime_type.clone(),
+                    _ => continue,
+                };
 
-            //     let anime = anime.unwrap();
+                let relation_insert_result = add_anime_relation(
+                    state.clone(),
+                    anime_id,
+                    related_anime_id,
+                    related_anime_type,
+                )
+                .await;
 
-            //     if anime.id_mal.is_none() {
-            //         tracing::warn!("Anime has no MAL ID, skipping...");
-            //         continue;
-            //     }
-
-            //     tracing::info!("Adding anime {} to import queue", anime.id_mal.unwrap());
-
-            //     let insert_result = insert_anime(
-            //         &state.db,
-            //         InsertAnime {
-            //             cover_image: anime.cover_image.clone(),
-            //             id_mal: anime.id_mal.unwrap(),
-            //             status: anime.status.clone(),
-            //             title: anime.title.clone(),
-            //             season: anime.season.clone(),
-            //             season_year: anime.season_year,
-            //         },
-            //     )
-            //     .await;
-
-            //     if let Err(e) = insert_result {
-            //         tracing::error!("Failed to insert anime: {}", e);
-            //         import_ids.iter().for_each(|id| {
-            //             state.import_queue.push(ImportQueueItem {
-            //                 anime_id: *id,
-            //                 ..Default::default()
-            //             })
-            //         });
-            //         continue;
-            //     }
-
-            //     if queue_item.related_anime_id.is_some() && queue_item.related_anime_type.is_some()
-            //     {
-            //         let relation_isert_result = sqlx::query!(
-            //                     r#"
-            //                     INSERT INTO anime_relations (base_anime_id, related_anime_id, relation)
-            //                     VALUES (?, ?, ?)
-            //                     ON DUPLICATE KEY UPDATE base_anime_id = ?, related_anime_id = ?, relation = ?
-            //                     "#,
-            //                     queue_item.related_anime_id.unwrap() ,
-            //                     anime.id_mal,
-            //                     queue_item.related_anime_type.clone().unwrap() ,
-            //                     queue_item.related_anime_id,
-            //                     anime.id_mal,
-            //                     queue_item.related_anime_type.clone().unwrap() ,
-            //                 )
-            //                 .execute(&state.db)
-            //                 .await;
-
-            //         if let Err(e) = relation_isert_result {
-            //             tracing::error!("Failed to insert relation link: {}", e);
-            //         }
-            //     }
-
-            //     let relation = anime.relations.clone();
-            //     if relation.is_none() {
-            //         continue;
-            //     }
-            //     let relation = relation.unwrap();
-
-            //     let relation: Vec<RelationsEdge> = relation
-            //         .edges
-            //         .into_iter()
-            //         .filter(|r| r.relation_type == "PREQUEL" || r.relation_type == "SEQUEL")
-            //         .filter(|r| r.node.id_mal.is_some())
-            //         .collect();
-
-            //     for related in relation {
-            //         if related.node.id_mal.is_none() {
-            //             tracing::warn!("Related anime has no MAL ID, skipping...");
-            //             continue;
-            //         }
-            //         tracing::info!(
-            //             "Adding related anime {} to import queue",
-            //             related.node.id_mal.unwrap()
-            //         );
-            //         state.import_queue.push(ImportQueueItem {
-            //             anime_id: related.node.id_mal.unwrap(),
-            //             user_id: None,
-            //             anime_watch_status: None,
-            //             related_anime_id: anime.id_mal,
-            //             ..Default::default()
-            //         });
-            //         //     let insert_result = insert_anime(
-            //         //         &state.db,
-            //         //         InsertAnime {
-            //         //             cover_image: related.node.cover_image.clone(),
-            //         //             id_mal: related.node.id_mal.unwrap(), // Safe to unwrap, we filter out None above
-            //         //             status: related.node.status.clone(),
-            //         //             title: related.node.title.clone(),
-            //         //             type_: related.node.type_.clone(),
-            //         //             season: related.node.season.clone(),
-            //         //             season_year: related.node.season_year,
-            //         //         },
-            //         //     )
-            //         //     .await;
-
-            //         //     if let Err(e) = insert_result {
-            //         //         tracing::error!("Failed to insert related anime: {}", e);
-            //         //         continue;
-            //         //     }
-
-            //         //     let relation_isert_result = sqlx::query!(
-            //         //             r#"
-            //         //             INSERT INTO anime_relations (base_anime_id, related_anime_id, relation)
-            //         //             VALUES (?, ?, ?)
-            //         //             ON DUPLICATE KEY UPDATE base_anime_id = ?, related_anime_id = ?, relation = ?
-            //         //             "#,
-            //         //             anime.id_mal,
-            //         //             related.node.id_mal,
-            //         //             related.relation_type,
-            //         //             anime.id_mal,
-            //         //             related.node.id_mal,
-            //         //             related.relation_type,
-            //         //         )
-            //         //         .execute(&state.db)
-            //         //         .await;
-
-            //         //     if let Err(e) = relation_isert_result {
-            //         //         tracing::error!("Failed to insert relation link: {}", e);
-            //         //     }
-            //     }
-            // }
-
-            // for item in ids.iter() {
-            //     if item.user_id.is_none() {
-            //         continue;
-            //     }
-            //     sqlx::query!(
-            //         r#"
-            //         INSERT INTO anime_users (anime_id, user_id, status)
-            //         VALUES
-            //             (?, ?, ?)
-            //         "#,
-            //         item.anime_id,
-            //         item.user_id,
-            //         item.anime_watch_status
-            //     )
-            //     .execute(&state.db)
-            //     .await
-            //     .expect("Failed to insert anime_user");
-            // }
-
-            // tracing::info!(
-            //     "Imported anime {}",
-            //     import_ids
-            //         .iter()
-            //         .map(|id| id.to_string())
-            //         .collect::<Vec<String>>()
-            //         .join(", ")
-            // );
+                if !relation_insert_result {
+                    tracing::error!(
+                        "Failed to anime {} to series {}",
+                        anime_id,
+                        related_anime_id
+                    );
+                    continue;
+                }
+            }
         }
     });
+    // tokio::spawn(async move {
+    //     tracing::info!("Starting import queue worker...");
+
+    //     loop {
+    //         let mut process_items = vec![];
+    //         for _ in 0..MAX_ANILIST_PER_QUERY {
+    //             let item = timeout(Duration::from_millis(500), state.import_queue.pop()).await;
+
+    //             if let Ok(item) = item {
+    //                 let times_in_queue = match &item {
+    //                     ImportQueueItem::Anime { times_in_queue, .. } => times_in_queue,
+    //                     ImportQueueItem::Relationship { times_in_queue, .. } => times_in_queue,
+    //                     ImportQueueItem::UserAnime { times_in_queue, .. } => times_in_queue,
+    //                 };
+    //                 let anime_id = match &item {
+    //                     ImportQueueItem::Anime { anime_id, .. } => anime_id,
+    //                     ImportQueueItem::Relationship { anime_id, .. } => anime_id,
+    //                     ImportQueueItem::UserAnime { anime_id, .. } => anime_id,
+    //                 };
+
+    //                 if times_in_queue > &5 {
+    //                     tracing::warn!(
+    //                         "Anime {} has been in queue for too long, skipping...",
+    //                         anime_id
+    //                     );
+    //                     continue;
+    //                 }
+
+    //                 process_items.push(item);
+    //             } else {
+    //                 break;
+    //             }
+    //         }
+
+    //         if process_items.is_empty() {
+    //             tokio::time::sleep(tokio::time::Duration::from_secs(10)).await;
+    //             continue;
+    //         }
+
+    //         let mut needs_fetching_id: Vec<ImportQueueItem> = vec![];
+
+    //         for queue_item in process_items.clone() {
+    //             match queue_item {
+    //                 ImportQueueItem::Anime {
+    //                     anime_id,
+    //                     times_in_queue: _,
+    //                 } => {
+    //                     if anime_needs_importing(state.clone(), anime_id).await {
+    //                         needs_fetching_id.push(queue_item.clone());
+    //                     }
+    //                 }
+    //                 ImportQueueItem::Relationship {
+    //                     anime_id,
+    //                     series_id,
+    //                     series_order,
+    //                     times_in_queue,
+    //                 } => {
+    //                     let needs_importing = anime_needs_importing(state.clone(), anime_id).await;
+    //                     if !needs_importing {
+    //                         let relation_inserted = add_anime_to_series(
+    //                             state.clone(),
+    //                             series_id,
+    //                             anime_id,
+    //                             series_order,
+    //                         )
+    //                         .await;
+
+    //                         if relation_inserted {
+    //                             continue;
+    //                         }
+    //                     }
+
+    //                     needs_fetching_id.push(ImportQueueItem::Relationship {
+    //                         anime_id,
+    //                         series_id,
+    //                         series_order,
+    //                         times_in_queue: times_in_queue + 1,
+    //                     });
+    //                 }
+    //                 ImportQueueItem::UserAnime {
+    //                     anime_id,
+    //                     user_id,
+    //                     anime_watch_status,
+    //                     times_in_queue,
+    //                 } => {
+    //                     let needs_importing = anime_needs_importing(state.clone(), anime_id).await;
+    //                     if !needs_importing {
+    //                         let relation_inserted = add_user_anime(
+    //                             state.clone(),
+    //                             anime_id,
+    //                             user_id.clone(),
+    //                             anime_watch_status.clone(),
+    //                         )
+    //                         .await;
+
+    //                         if relation_inserted {
+    //                             continue;
+    //                         }
+    //                     }
+
+    //                     needs_fetching_id.push(ImportQueueItem::UserAnime {
+    //                         anime_id,
+    //                         user_id,
+    //                         anime_watch_status,
+    //                         times_in_queue: times_in_queue + 1,
+    //                     });
+    //                 }
+    //             }
+    //         }
+
+    //         if needs_fetching_id.is_empty() {
+    //             continue;
+    //         }
+
+    //         let mut import_ids: Vec<i32> = vec![];
+
+    //         for id in needs_fetching_id.clone() {
+    //             match id {
+    //                 ImportQueueItem::Anime { anime_id, .. } => {
+    //                     import_ids.push(anime_id);
+    //                 }
+    //                 ImportQueueItem::Relationship { anime_id, .. } => {
+    //                     import_ids.push(anime_id);
+    //                 }
+    //                 ImportQueueItem::UserAnime { anime_id, .. } => {
+    //                     import_ids.push(anime_id);
+    //                 }
+    //             }
+    //         }
+
+    //         let import_ids2 = import_ids.clone();
+
+    //         let result = anime::get_animes_from_anilist(state.reqwest.clone(), import_ids2).await;
+
+    //         if result.retry_after != -1 {
+    //             tracing::warn!("Rate limit hit, sleeping for {}", result.retry_after);
+    //             tracing::info!(
+    //                 "Adding {} back to queue",
+    //                 import_ids
+    //                     .iter()
+    //                     .map(|id| id.to_string())
+    //                     .collect::<Vec<String>>()
+    //                     .join(", ")
+    //             );
+
+    //             for item in needs_fetching_id.iter() {
+    //                 state.import_queue.push(item.clone());
+    //             }
+    //             tokio::time::sleep(tokio::time::Duration::from_secs(result.retry_after as u64))
+    //                 .await;
+    //         }
+
+    //         let ani_result = match result.response {
+    //             Ok(data) => data,
+    //             Err(e) => {
+    //                 tracing::error!("Failed to get anime: {}, readding to queue", e);
+
+    //                 import_ids.iter().for_each(|id| {
+    //                     let item = needs_fetching_id.iter().find(|item| match item {
+    //                         ImportQueueItem::Anime { anime_id, .. } => *anime_id == *id,
+    //                         ImportQueueItem::Relationship { anime_id, .. } => *anime_id == *id,
+    //                         ImportQueueItem::UserAnime { anime_id, .. } => *anime_id == *id,
+    //                     });
+    //                     let times_in_queue = match item {
+    //                         Some(ImportQueueItem::Anime { times_in_queue, .. }) => {
+    //                             times_in_queue + 1
+    //                         }
+    //                         Some(ImportQueueItem::Relationship { times_in_queue, .. }) => {
+    //                             times_in_queue + 1
+    //                         }
+    //                         Some(ImportQueueItem::UserAnime { times_in_queue, .. }) => {
+    //                             times_in_queue + 1
+    //                         }
+    //                         _ => 0,
+    //                     };
+
+    //                     state.import_queue.push(ImportQueueItem::Anime {
+    //                         anime_id: *id,
+    //                         times_in_queue,
+    //                     })
+    //                 });
+    //                 continue;
+    //             }
+    //         };
+
+    //         for i in 0..import_ids.len() {
+    //             let queue_item = needs_fetching_id
+    //                 .iter()
+    //                 .find(|item| match item {
+    //                     ImportQueueItem::Anime { anime_id, .. } => *anime_id == import_ids[i],
+    //                     ImportQueueItem::Relationship { anime_id, .. } => {
+    //                         *anime_id == import_ids[i]
+    //                     }
+    //                     ImportQueueItem::UserAnime { anime_id, .. } => *anime_id == import_ids[i],
+    //                 })
+    //                 .unwrap();
+
+    //             let anime = match i {
+    //                 0 => ani_result.data.anime1,
+    //                 1 => ani_result.data.anime2,
+    //                 2 => ani_result.data.anime3,
+    //                 3 => ani_result.data.anime4,
+    //                 4 => ani_result.data.anime5,
+    //                 5 => ani_result.data.anime6,
+    //                 6 => ani_result.data.anime7,
+    //                 7 => ani_result.data.anime8,
+    //                 8 => ani_result.data.anime9,
+    //                 9 => ani_result.data.anime10,
+    //                 10 => ani_result.data.anime11,
+    //                 11 => ani_result.data.anime12,
+    //                 12 => ani_result.data.anime13,
+    //                 13 => ani_result.data.anime14,
+    //                 14 => ani_result.data.anime15,
+    //                 15 => ani_result.data.anime16,
+    //                 16 => ani_result.data.anime17,
+    //                 17 => ani_result.data.anime18,
+    //                 18 => ani_result.data.anime19,
+    //                 19 => ani_result.data.anime20,
+    //                 20 => ani_result.data.anime21,
+    //                 21 => ani_result.data.anime22,
+    //                 22 => ani_result.data.anime23,
+    //                 23 => ani_result.data.anime24,
+    //                 24 => ani_result.data.anime25,
+    //                 25 => ani_result.data.anime26,
+    //                 26 => ani_result.data.anime27,
+    //                 27 => ani_result.data.anime28,
+    //                 28 => ani_result.data.anime29,
+    //                 29 => ani_result.data.anime30,
+    //                 30 => ani_result.data.anime31,
+    //                 31 => ani_result.data.anime32,
+    //                 32 => ani_result.data.anime33,
+    //                 33 => ani_result.data.anime34,
+    //                 34 => ani_result.data.anime35,
+    //                 _ => None,
+    //             };
+
+    //             if anime.is_none() {
+    //                 tracing::warn!(
+    //                     "Anime {} not found in response, readding to queue...",
+    //                     import_ids[i]
+    //                 );
+    //                 let times_in_queue = match queue_item {
+    //                     ImportQueueItem::Anime { times_in_queue, .. } => times_in_queue + 1,
+    //                     ImportQueueItem::Relationship { times_in_queue, .. } => times_in_queue + 1,
+    //                     ImportQueueItem::UserAnime { times_in_queue, .. } => times_in_queue + 1,
+    //                 };
+
+    //                 state.import_queue.push(ImportQueueItem::Anime {
+    //                     anime_id: import_ids[i],
+    //                     times_in_queue,
+    //                 });
+    //                 continue;
+    //             }
+
+    //             let anime = anime.unwrap();
+
+    //             if anime.id_mal.is_none() {
+    //                 tracing::warn!("Anime has no MAL ID, skipping...");
+    //                 continue;
+    //             }
+
+    //             tracing::info!("Importing {} into database", anime.id_mal.unwrap());
+
+    //             let insert_result = insert_anime(
+    //                 &state.db,
+    //                 InsertAnime {
+    //                     cover_image: anime.cover_image.clone(),
+    //                     id_mal: anime.id_mal.unwrap(),
+    //                     status: anime.status.clone(),
+    //                     title: anime.title.clone(),
+    //                     season: anime.season.clone(),
+    //                     season_year: anime.season_year,
+    //                 },
+    //             );
+
+    //             if let Err(e) = insert_result.await {
+    //                 tracing::error!("Failed to insert anime: {}", e);
+    //                 import_ids.iter().for_each(|id| {
+    //                     state.import_queue.push(ImportQueueItem::Anime {
+    //                         anime_id: *id,
+    //                         times_in_queue: 0,
+    //                     })
+    //                 });
+    //                 continue;
+    //             }
+
+    //             match queue_item {
+    //                 ImportQueueItem::Relationship {
+    //                     anime_id,
+    //                     related_anime_id,
+    //                     related_anime_type,
+    //                     ..
+    //                 } => {
+    //                     let relation_insert_result = add_anime_relation(
+    //                         state.clone(),
+    //                         anime.id_mal.unwrap(),
+    //                         *related_anime_id,
+    //                         related_anime_type.clone(),
+    //                     )
+    //                     .await;
+
+    //                     if !relation_insert_result {
+    //                         tracing::error!("Failed to anime {} to series {}", anime_id, series_id);
+    //                         continue;
+    //                     }
+    //                 }
+    //                 ImportQueueItem::UserAnime {
+    //                     user_id,
+    //                     anime_watch_status,
+    //                     ..
+    //                 } => {
+    //                     let relation_inserted = add_user_anime(
+    //                         state.clone(),
+    //                         anime.id_mal.unwrap(),
+    //                         user_id.clone(),
+    //                         anime_watch_status.clone(),
+    //                     )
+    //                     .await;
+
+    //                     if !relation_inserted {
+    //                         tracing::error!(
+    //                             "Failed to insert user anime between anime {} and user {}",
+    //                             anime.id_mal.unwrap(),
+    //                             user_id
+    //                         );
+    //                         continue;
+    //                     }
+    //                 }
+    //                 _ => {}
+    //             }
+
+    //             let relation = anime.relations.clone();
+
+    //             if relation.is_none() {
+    //                 tracing::info!(
+    //                     "Anime {} has no relations, skipping...",
+    //                     anime.id_mal.unwrap()
+    //                 );
+    //                 continue;
+    //             }
+
+    //             let relation = relation.unwrap();
+
+    //             tracing::info!(
+    //                 "Anime {} has {} related animes",
+    //                 anime.id_mal.unwrap(),
+    //                 relation.edges.len()
+    //             );
+
+    //             let relation: Vec<RelationsEdge> = relation
+    //                 .edges
+    //                 .into_iter()
+    //                 .filter(|r| r.relation_type == "PREQUEL" || r.relation_type == "SEQUEL")
+    //                 .filter(|r| r.node.id_mal.is_some())
+    //                 .collect();
+
+    //             for related in relation {
+    //                 if related.node.id_mal.is_none() {
+    //                     tracing::warn!("Related anime has no MAL ID, skipping...");
+    //                     continue;
+    //                 }
+    //                 tracing::info!(
+    //                     "Adding related anime {} to import queue",
+    //                     related.node.id_mal.unwrap()
+    //                 );
+
+    //                 let (series_order, series_id) = match queue_item {
+    //                     ImportQueueItem::Relationship {
+    //                         series_order,
+    //                         series_id,
+    //                         ..
+    //                     } => (series_order + 1, *series_id),
+    //                     _ => (0, anime.id_mal.unwrap()),
+    //                 };
+
+    //                 state.import_queue.push(ImportQueueItem::Relationship {
+    //                     anime_id: related.node.id_mal.unwrap(),
+    //                     series_id,
+    //                     series_order,
+    //                     times_in_queue: 0,
+    //                 });
+    //             }
+
+    //             tokio::time::sleep(tokio::time::Duration::from_millis(1)).await;
+    //         }
+
+    //         tracing::info!(
+    //             "Imported anime {}",
+    //             import_ids
+    //                 .iter()
+    //                 .map(|id| id.to_string())
+    //                 .collect::<Vec<String>>()
+    //                 .join(", ")
+    //         );
+    //     }
+    // });
 }

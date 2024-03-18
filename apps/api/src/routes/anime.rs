@@ -6,13 +6,17 @@ use axum::{
     response::IntoResponse,
     Extension, Json,
 };
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{query_as, Execute, MySql, QueryBuilder};
+use sqlx::{
+    error::BoxDynError, mysql::MySqlValueRef, prelude::FromRow, query_as, Decode, Execute, MySql,
+    QueryBuilder,
+};
 
 use crate::{
     anime::{
-        self, get_anime_with_relations, get_local_anime_data, ListStatus, LocalAnineListResult,
+        self, get_anime_with_relations, get_local_anime_data, AnimeTableRow, DBUserAnime,
+        ListStatus, LocalAnime, LocalAnineListResult,
     },
     helpers::json_response,
     models::user::User,
@@ -24,6 +28,13 @@ struct AnimeIdResponse {
     anime_id: i32,
 }
 
+#[derive(serde::Deserialize, Serialize)]
+pub struct AnimeUserListResponse {
+    pub animes: Vec<DBUserAnime>,
+    pub list_status: Vec<AnimeStatus>,
+    pub import_status: ListStatus,
+    pub relations: Vec<i32>,
+}
 #[axum::debug_handler]
 pub async fn get_anime_list(
     State(state): State<AppState>,
@@ -75,38 +86,22 @@ pub async fn get_anime_list(
         });
     }
 
-    let user_order = query_as!(
-        AnimeIdResponse,
-        r#"
-        SELECT anime_id FROM anime_users WHERE user_id = ? ORDER BY watch_priority
-        "#,
-        full_user.id
-    );
-
-    let db_order = user_order
-        .fetch_all(&state.db)
-        .await
-        .expect("Failed to get anime order");
-
-    let mut ordered_animes = vec![];
-
-    for item in db_order {
-        let anime = local_animes
-            .animes
+    let list_status = get_user_watch_status(
+        state.db.clone(),
+        mal_animes
+            .data
             .iter()
-            .find(|anime| anime.id == item.anime_id)
-            .cloned();
+            .map(|a| a.node.id)
+            .collect::<Vec<i32>>(),
+    )
+    .await
+    .unwrap_or(vec![]);
 
-        if anime.is_none() {
-            continue;
-        }
-
-        ordered_animes.push(anime.unwrap());
-    }
-
-    let res = LocalAnineListResult {
-        animes: ordered_animes,
-        status,
+    let res = AnimeUserListResponse {
+        animes: local_animes.animes,
+        list_status,
+        import_status: status,
+        relations: vec![],
     };
 
     json_response!(StatusCode::OK, res)
@@ -255,14 +250,137 @@ pub async fn update_list_order(
     json_response!(StatusCode::OK, {"status": "ok"})
 }
 
+#[derive(serde::Deserialize, Serialize, FromRow)]
+pub struct AnimeStatus {
+    status: Option<String>,
+    anime_id: i32,
+    watch_priority: i32,
+}
+
+async fn get_user_watch_status(
+    db: sqlx::Pool<sqlx::MySql>,
+    animes: Vec<i32>,
+) -> Result<Vec<AnimeStatus>, AppError> {
+    if animes.is_empty() {
+        return Ok(vec![]);
+    }
+    let params = format!("?{}", ", ?".repeat(animes.len() - 1));
+    let query_str = format!(
+        "SELECT anime_id, status, watch_priority FROM anime_users WHERE anime_id IN ({})",
+        params
+    );
+
+    let mut query = sqlx::query_as::<_, AnimeStatus>(&query_str);
+    for id in animes {
+        query = query.bind(id);
+    }
+
+    let rows = query.fetch_all(&db).await?;
+
+    Ok(rows)
+}
+
+#[derive(serde::Deserialize, Serialize)]
+struct SeriesAnime {
+    anime_id: i32,
+    series_id: i32,
+    series_order: i32,
+}
+
+async fn get_series(
+    db: sqlx::Pool<sqlx::MySql>,
+    anime_id: i32,
+) -> Result<Vec<SeriesAnime>, AppError> {
+    let series = sqlx::query_as!(
+        SeriesAnime,
+        r#"
+        SELECT * FROM anime_series WHERE anime_id = ?
+        "#,
+        anime_id
+    )
+    .fetch_all(&db)
+    .await
+    .expect("Failed to get series");
+
+    Ok(series)
+}
+
 #[axum::debug_handler]
 pub async fn get_anime(
     State(state): State<AppState>,
     Path(anime_id): Path<i32>,
 ) -> impl IntoResponse {
-    let animes = get_anime_with_relations(state.db, anime_id).await;
+    let animes = sqlx::query_as!(
+        AnimeTableRow,
+        r#"
+        SELECT
+            *
+        FROM
+            animes
+        WHERE
+            id IN(
+            SELECT
+                anime_id
+            FROM
+                `anime_series`
+            WHERE
+                series_id IN(SELECT series_id FROM anime_series WHERE anime_id = ?) 
+                OR anime_id IN(SELECT series_id FROM anime_series WHERE anime_id = ?)
+        )
+        "#,
+        anime_id,
+        anime_id
+    )
+    .fetch_all(&state.db)
+    .await
+    .expect("Failed to get anime");
 
-    let animes = animes.expect("Failed to get anime");
+    let anime_ids = animes.iter().map(|a| a.id).collect::<Vec<i32>>();
 
-    json_response!(StatusCode::OK, {"data": animes})
+    let list_status = get_user_watch_status(state.db.clone(), anime_ids)
+        .await
+        .unwrap_or(vec![]);
+
+    let series_animes = get_series(state.db.clone(), anime_id)
+        .await
+        .unwrap_or(vec![]);
+
+    json_response!(StatusCode::OK, {"animes": animes, "list_status": list_status, "series_animes": series_animes})
+}
+
+#[derive(Deserialize, Serialize)]
+struct AnimeRelation {
+    relation_id: i32,
+    relation: String,
+}
+
+#[axum::debug_handler]
+pub async fn get_anime_relations(
+    State(state): State<AppState>,
+    Path(anime_id): Path<i32>,
+) -> impl IntoResponse {
+    let relations = sqlx::query_as!(
+        AnimeRelation,
+        r#"
+        SELECT relation_id, relation FROM anime_relations WHERE anime_id = ? 
+        "#,
+        anime_id,
+    )
+    .fetch_all(&state.db)
+    .await
+    .expect("Failed to get relations");
+
+    json_response!(StatusCode::OK, {"relations":relations})
+}
+
+#[axum::debug_handler]
+pub async fn get_anime_force_import(
+    State(state): State<AppState>,
+    Path(id): Path<i32>,
+) -> impl IntoResponse {
+    state.import_queue.push(ImportQueueItem::Anime {
+        anime_id: id,
+        times_in_queue: 0,
+    });
+    json_response!(StatusCode::OK, {"queue": "ok"})
 }
