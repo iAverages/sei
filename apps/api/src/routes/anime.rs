@@ -47,33 +47,47 @@ pub async fn get_anime_list(
 
     let local_animes = local_animes.expect("Failed to get local animes");
     let mal_animes = mal_animes.expect("Failed to get mal animes");
-    let mut status = ListStatus::Imported;
+    let status;
 
-    if mal_animes.data.len() != local_animes.animes.len() {
-        tracing::info!("Mal animes: {:?}", mal_animes.data.len());
-        tracing::info!("Local animes: {:?}", local_animes.animes.len());
+    tracing::info!("Mal animes: {:?}", mal_animes.data.len());
+    tracing::info!("Local animes: {:?}", local_animes.animes.len());
 
-        if local_animes.animes.is_empty() {
-            status = ListStatus::Importing;
-        } else {
-            status = ListStatus::Updating;
+    if mal_animes.data.len() == local_animes.animes.len() {
+        status = ListStatus::Imported;
+    } else if local_animes.animes.is_empty() {
+        status = ListStatus::Importing;
+    } else {
+        status = ListStatus::Updating;
+    }
+
+    mal_animes.data.iter().for_each(|anime| {
+        let local_anime = local_animes
+            .animes
+            .iter()
+            .find(|local| local.id == anime.node.id);
+
+        if local_anime.is_none() {
+            state.import_queue.push(ImportQueueItem::UserAnime {
+                anime_id: anime.node.id,
+                user_id: full_user.id.clone(),
+                anime_watch_status: anime.list_status.status.clone(),
+                times_in_queue: 0,
+            });
+            return;
         }
 
-        mal_animes.data.iter().for_each(|anime| {
-            if !local_animes
-                .animes
-                .iter()
-                .any(|local| local.id == anime.node.id)
-            {
-                state.import_queue.push(ImportQueueItem::UserAnime {
-                    anime_id: anime.node.id,
-                    user_id: full_user.id.clone(),
-                    anime_watch_status: anime.list_status.status.clone(),
-                    times_in_queue: 0,
-                });
-            }
-        });
-    }
+        let local_anime = local_anime.unwrap();
+
+        if local_anime.watch_status != anime.list_status.status {
+            state.import_queue.push(ImportQueueItem::UserAnime {
+                anime_id: anime.node.id,
+                user_id: full_user.id.clone(),
+                anime_watch_status: anime.list_status.status.clone(),
+                times_in_queue: 0,
+            });
+            return;
+        }
+    });
 
     let user_order = query_as!(
         AnimeIdResponse,
