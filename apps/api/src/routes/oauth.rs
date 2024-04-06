@@ -97,9 +97,9 @@ pub async fn handle_mal_callback(
     jar: CookieJar,
     Extension(oauth_client): Extension<BasicClient>,
 ) -> impl IntoResponse {
-    let csrf_token = private_jar
-        .get("mal_csrf_token")
-        .expect("No CSRF token in cookie jar");
+    // let csrf_token = private_jar
+    //     .get("mal_csrf_token")
+    //     .expect("No CSRF token in cookie jar");
     let pkce_verifier_str = private_jar
         .get("mal_pkce_verifier")
         .expect("No PKCE verifier in cookie jar");

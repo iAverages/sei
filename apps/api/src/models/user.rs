@@ -82,12 +82,6 @@ pub struct User {
     pub deleted_at: Option<NaiveDateTime>,
 }
 
-impl User {
-    pub async fn get_list(&self, state: AppState) {
-        println!("Getting list for {}", self.name)
-    }
-}
-
 #[derive(Deserialize)]
 pub struct MalUser {
     pub id: i32,

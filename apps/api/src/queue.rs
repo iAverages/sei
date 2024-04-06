@@ -229,36 +229,36 @@ async fn queue_related_animes(state: AppState, animes: Vec<AniListAnimeItem>) {
     // });
 }
 
-async fn add_anime_to_series(
-    state: AppState,
-    series_id: i32,
-    anime_id: i32,
-    series_order: i32,
-) -> bool {
-    tracing::info!("Adding {} to series {}", series_id, anime_id,);
-    let relation_isert_result = sqlx::query!(
-        r#"
-                INSERT INTO anime_series (series_id, anime_id, series_order)
-                VALUES (?, ?, ?)
-                ON DUPLICATE KEY UPDATE series_id = ?, anime_id = ?, series_order = ?
-                "#,
-        series_id,
-        anime_id,
-        series_order,
-        series_id,
-        anime_id,
-        series_order,
-    )
-    .execute(&state.db)
-    .await;
+// async fn add_anime_to_series(
+//     state: AppState,
+//     series_id: i32,
+//     anime_id: i32,
+//     series_order: i32,
+// ) -> bool {
+//     tracing::info!("Adding {} to series {}", series_id, anime_id,);
+//     let relation_isert_result = sqlx::query!(
+//         r#"
+//                 INSERT INTO anime_series (series_id, anime_id, series_order)
+//                 VALUES (?, ?, ?)
+//                 ON DUPLICATE KEY UPDATE series_id = ?, anime_id = ?, series_order = ?
+//                 "#,
+//         series_id,
+//         anime_id,
+//         series_order,
+//         series_id,
+//         anime_id,
+//         series_order,
+//     )
+//     .execute(&state.db)
+//     .await;
 
-    if let Err(e) = relation_isert_result {
-        tracing::error!("Failed to insert relation link: {}", e);
-        return false;
-    }
+//     if let Err(e) = relation_isert_result {
+//         tracing::error!("Failed to insert relation link: {}", e);
+//         return false;
+//     }
 
-    true
-}
+//     true
+// }
 
 async fn add_anime_relation(
     state: AppState,
@@ -417,41 +417,41 @@ fn get_anime_from_anilist_result(result: AnilistResponse, i: usize) -> Option<An
     }
 }
 
-async fn get_ids_for_update(db: sqlx::Pool<MySql>, items: Vec<i32>) -> Vec<i32> {
-    let local_data = anime::get_local_anime_datas(db, items)
-        .await
-        .unwrap_or(vec![]);
+// async fn get_ids_for_update(db: sqlx::Pool<MySql>, items: Vec<i32>) -> Vec<i32> {
+//     let local_data = anime::get_local_anime_datas(db, items)
+//         .await
+//         .unwrap_or(vec![]);
 
-    local_data
-        .iter()
-        .filter(|d| {
-            let now = chrono::Utc::now().naive_utc();
-            let updated_at = d.updated_at;
-            let diff = now - updated_at;
+//     local_data
+//         .iter()
+//         .filter(|d| {
+//             let now = chrono::Utc::now().naive_utc();
+//             let updated_at = d.updated_at;
+//             let diff = now - updated_at;
 
-            if diff.num_hours() > 1 {
-                tracing::info!(
-                    "Anime {} was last updated more than 1 hour ago, reimporting",
-                    d.id
-                );
-                return true;
-            }
+//             if diff.num_hours() > 1 {
+//                 tracing::info!(
+//                     "Anime {} was last updated more than 1 hour ago, reimporting",
+//                     d.id
+//                 );
+//                 return true;
+//             }
 
-            false
-        })
-        .map(|d| d.id)
-        .collect()
-}
+//             false
+//         })
+//         .map(|d| d.id)
+//         .collect()
+// }
 
-struct AnimeIds {
-    id: i32,
-}
+// struct AnimeIds {
+//     id: i32,
+// }
 
-struct AnimeRelationInsertItem {
-    anime_id: i32,
-    related_anime_id: i32,
-    relation: String,
-}
+// struct AnimeRelationInsertItem {
+//     anime_id: i32,
+//     related_anime_id: i32,
+//     relation: String,
+// }
 
 #[derive(Debug)]
 struct SeriesRelations {

@@ -1,9 +1,9 @@
-use crate::{AppState, ImportQueueItem};
+use crate::AppState;
 
-pub fn start_background_job(state: AppState) {
+pub fn start_background_job(_state: AppState) {
     tracing::info!("Starting background job...");
-    let db = state.db.clone();
-    let import_queue = state.import_queue.clone();
+    // let db = state.db.clone();
+    // let import_queue = state.import_queue.clone();
 
     tokio::spawn(async move {
         loop {

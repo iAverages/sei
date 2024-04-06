@@ -12,7 +12,6 @@ use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     sync::Arc,
-    time::Duration,
 };
 
 use axum::{
@@ -31,7 +30,6 @@ use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, T
 use reqwest::Client;
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
-use tokio::time::timeout;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 

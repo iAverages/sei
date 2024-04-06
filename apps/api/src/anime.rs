@@ -2,17 +2,15 @@ use std::{
     cell::RefCell,
     collections::HashMap,
     fmt::{Display, Formatter},
-    sync::Arc,
     vec,
 };
 
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{prelude::FromRow, Encode, Execute, MySql, QueryBuilder};
-use tower::builder;
+use sqlx::{prelude::FromRow, Encode, MySql, QueryBuilder};
 
-use crate::{models::user::User, routes::anime::AnimeStatus, types::Anime, AppError};
+use crate::models::user::User;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct AnimePicture {
@@ -225,49 +223,49 @@ pub struct AnimeWithRelations {
     pub relations: Option<RefCell<Box<AnimeRelation>>>,
 }
 
-pub async fn get_anime_with_relations(
-    db: sqlx::Pool<sqlx::MySql>,
-    id: i32,
-) -> Result<AnimeTemp, anyhow::Error> {
-    let anime = sqlx::query_as!(
-        AnimeTableRow,
-        r#"
-        SELECT * FROM animes WHERE id = ?
-        "#,
-        id
-    )
-    .fetch_one(&db)
-    .await?;
+// pub async fn get_anime_with_relations(
+//     db: sqlx::Pool<sqlx::MySql>,
+//     id: i32,
+// ) -> Result<AnimeTemp, anyhow::Error> {
+//     let anime = sqlx::query_as!(
+//         AnimeTableRow,
+//         r#"
+//         SELECT * FROM animes WHERE id = ?
+//         "#,
+//         id
+//     )
+//     .fetch_one(&db)
+//     .await?;
 
-    let mut last_relation_id = id;
-    let mut levels = 0;
-    let max_relations = 100;
+//     let mut last_relation_id = id;
+//     let mut levels = 0;
+//     let max_relations = 100;
 
-    // let mut relations: Vec<AnimeRelation> = vec![];
+//     // let mut relations: Vec<AnimeRelation> = vec![];
 
-    // while max_relations > levels {
-    //     let sequel = get_series(db.clone(), last_relation_id).await;
-    //     if sequel.is_err() {
-    //         break;
-    //     }
+//     // while max_relations > levels {
+//     //     let sequel = get_series(db.clone(), last_relation_id).await;
+//     //     if sequel.is_err() {
+//     //         break;
+//     //     }
 
-    //     let sequel = sequel.unwrap();
-    //     last_relation_id = sequel.id;
-    //     relations.push(sequel.clone());
-    //     levels += 1;
-    // }
+//     //     let sequel = sequel.unwrap();
+//     //     last_relation_id = sequel.id;
+//     //     relations.push(sequel.clone());
+//     //     levels += 1;
+//     // }
 
-    Ok(AnimeTemp {
-        id: anime.id,
-        english_title: anime.english_title,
-        romaji_title: anime.romaji_title,
-        status: anime.status,
-        picture: anime.picture,
-        updated_at: anime.updated_at,
-        created_at: anime.created_at,
-        relation: vec![],
-    })
-}
+//     Ok(AnimeTemp {
+//         id: anime.id,
+//         english_title: anime.english_title,
+//         romaji_title: anime.romaji_title,
+//         status: anime.status,
+//         picture: anime.picture,
+//         updated_at: anime.updated_at,
+//         created_at: anime.created_at,
+//         relation: vec![],
+//     })
+// }
 
 #[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct AnimeTemp {
@@ -409,7 +407,7 @@ pub async fn get_local_user_list(
     for relation in relations {
         relations_map
             .entry(relation.anime_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(relation);
     }
 

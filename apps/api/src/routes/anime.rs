@@ -8,25 +8,15 @@ use axum::{
 };
 use serde::{Deserialize, Serialize};
 use serde_json::json;
-use sqlx::{
-    error::BoxDynError, mysql::MySqlValueRef, prelude::FromRow, query_as, Decode, Execute, MySql,
-    QueryBuilder,
-};
+use sqlx::{prelude::FromRow, query_as, Execute, MySql, QueryBuilder};
 
 use crate::{
-    anime::{
-        self, get_anime_with_relations, get_local_anime_data, AnimeTableRow, DBUserAnime,
-        ListStatus, LocalAnime, LocalAnineListResult,
-    },
+    anime::{self, AnimeTableRow, DBUserAnime, ListStatus},
     helpers::json_response,
     models::user::User,
     types::CurrentUser,
     AppError, AppState, ImportQueueItem,
 };
-
-struct AnimeIdResponse {
-    anime_id: i32,
-}
 
 #[derive(serde::Deserialize, Serialize)]
 pub struct AnimeUserListResponse {
