@@ -1,18 +1,17 @@
+use anyhow::Context;
 use std::{
     cell::RefCell,
     collections::HashMap,
     fmt::{Display, Formatter},
-    sync::Arc,
     vec,
 };
 
 use reqwest::{Client, Response};
 use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
-use sqlx::{prelude::FromRow, Encode, Execute, MySql, QueryBuilder};
-use tower::builder;
+use sqlx::{prelude::FromRow, Encode, MySql, QueryBuilder};
 
-use crate::{models::user::User, routes::anime::AnimeStatus, types::Anime, AppError};
+use crate::models::user::User;
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct AnimePicture {
@@ -486,7 +485,11 @@ pub async fn get_mal_user_list(
         .send()
         .await
         .expect("Failed to get MAL anime");
-    let anime = res.json::<MalAnimeListResponse>().await?;
+
+    let text = res.text().await?;
+    let anime: MalAnimeListResponse = serde_json::from_str(&text)
+        .with_context(|| format!("Unable to deserialise response. Body was: \"{}\"", text))?;
+
     let paging = anime.paging.clone();
 
     tracing::info!("Got {} anime from MAL", anime.data.len());

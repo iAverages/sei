@@ -121,7 +121,23 @@ pub async fn handle_mal_callback(
     let user = find_user_mal_id(state.clone(), mal_user_id).await;
 
     let user = match user {
-        Some(user) => user,
+        Some(user) => {
+            // Ensure the user has the latest token
+            sqlx::query!(
+                "UPDATE users SET mal_access_token = ? WHERE id = ?",
+                token,
+                user.id
+            )
+            .execute(&state.db)
+            .await
+            .expect("Failed to update user token");
+
+            // Fetch user again with updated token
+            // TODO: Update the token in the user object instead of fetching it again
+            find_user_mal_id(state.clone(), mal_user_id)
+                .await
+                .expect("Failed to find user")
+        }
         None => {
             create_user(
                 state.clone(),

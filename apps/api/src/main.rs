@@ -12,7 +12,6 @@ use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
     sync::Arc,
-    time::Duration,
 };
 
 use axum::{
@@ -31,7 +30,6 @@ use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, T
 use reqwest::Client;
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
-use tokio::time::timeout;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
@@ -81,14 +79,6 @@ pub enum ImportQueueItem {
         related_anime_type: String,
     },
 }
-
-// // struct ImportQueueItem {
-// //     anime_id: i32,
-// //     user_id: Option<String>,
-// //     anime_watch_status: Option<String>,
-// //     related_anime_id: Option<i32>,
-// //     related_anime_type: Option<String>,
-// // }
 
 type ImportQueue = Queue<ImportQueueItem>;
 

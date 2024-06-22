@@ -1,12 +1,17 @@
 import { Button } from "~/components/ui/button";
+import { useMalLogin } from "~/hooks/useMalLogin";
 
 const Login = () => {
+    const { isLoading, loginError, openDiscordLogin } = useMalLogin({
+        redirect: "/done",
+    });
+
     return (
         <div class={"flex w-screen h-screen items-center justify-center"}>
             <h1 class={"text-3xl font-bold"}>Login</h1>
-            <a href={`${import.meta.env.PUBLIC_API_URL ?? ""}/oauth/mal/redirect`}>
+            <form onSubmit={openDiscordLogin}>
                 <Button>Login</Button>
-            </a>
+            </form>
         </div>
     );
 };
