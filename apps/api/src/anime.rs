@@ -408,70 +408,14 @@ pub async fn get_local_user_list(
     for relation in relations {
         relations_map
             .entry(relation.anime_id)
-            .or_insert_with(Vec::new)
+            .or_default()
             .push(relation);
     }
-
-    // let local_animes: Vec<UserListAnime> = animes
-    //     .into_iter()
-    //     .map(|anime| {
-    //         let relations = relations_map.get(&anime.id).cloned().unwrap_or_default();
-
-    //         UserListAnime {
-    //             id: anime.id,
-    //             english_title: anime.english_title,
-    //             romaji_title: anime.romaji_title,
-    //             status: anime.status,
-    //             picture: anime.picture,
-    //             updated_at: anime.updated_at,
-    //             created_at: anime.created_at,
-    //             watch_priority: anime.watch_priority,
-    //             watch_status: anime.watch_status,
-    //             season: anime.season,
-    //             season_year: anime.season_year,
-    //         }
-    //     })
-    //     .collect();
 
     Ok(LocalAnineListResult {
         animes,
         status: ListStatus::Imported,
     })
-    // Ok(anime
-    //     .into_iter()
-    //     .map(|a| {
-    //         let relations = relations.clone();
-    //         let relationed_anime = relations
-    //             .into_iter()
-    //             .filter(|r| r.base_anime_id == a.id)
-    //             .collect();
-
-    //         LocalAnime {
-    //             id: a.id,
-    //             english_title: a.english_title,
-    //             romaji_title: a.romaji_title,
-    //             status: a.status,
-    //             picture: a.picture,
-    //             updated_at: a.updated_at,
-    //             created_at: a.created_at,
-    //             relation: relationed_anime,
-    //         }
-    //     })
-    //     .collect())
-
-    // let relattions = sqlx::query_as!(
-    //     LocalAnimeRelation,
-    //     r#"
-    //     SELECT
-    //         *
-    //     FROM
-    //         anime_relations
-    //     INNER JOIN animes ON animes.id = anime_relations.related_anime_id
-    //     WHERE
-    //         base_anime_id IN ?
-    // "#,
-    //     ids
-    // );
 }
 
 pub async fn get_mal_user_list(
