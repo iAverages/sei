@@ -3,7 +3,7 @@ import { useMalLogin } from "~/hooks/useMalLogin";
 
 const Login = () => {
     const { isLoading, loginError, openDiscordLogin } = useMalLogin({
-        redirect: "/done",
+        redirect: "/",
     });
 
     return (

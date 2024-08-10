@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    response::{IntoResponse, Redirect},
+    response::{Html, IntoResponse, Redirect},
     Extension,
 };
 use axum_extra::extract::{
@@ -136,5 +136,6 @@ pub async fn handle_mal_callback(
         importer.add_all(ids);
     }
 
-    (updated_jar, Redirect::temporary("http://localhost:3000"))
+    let html = Html::from("<html><script>window.close()</script></html>");
+    (updated_jar, html)
 }

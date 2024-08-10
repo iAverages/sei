@@ -44,14 +44,15 @@ impl FromStr for AnimeWatchStatus {
         }
     }
 }
-impl Into<String> for AnimeWatchStatus {
-    fn into(self) -> String {
-        let str = match self {
-            Self::Watching => "watching",
-            Self::Completed => "completed",
-            Self::OnHold => "on_hold",
-            Self::Dropped => "dropped",
-            Self::PlanToWatch => "plan_to_watch",
+
+impl From<AnimeWatchStatus> for String {
+    fn from(val: AnimeWatchStatus) -> Self {
+        let str = match val {
+            AnimeWatchStatus::Watching => "watching",
+            AnimeWatchStatus::Completed => "completed",
+            AnimeWatchStatus::OnHold => "on_hold",
+            AnimeWatchStatus::Dropped => "dropped",
+            AnimeWatchStatus::PlanToWatch => "plan_to_watch",
         };
 
         str.to_string()
