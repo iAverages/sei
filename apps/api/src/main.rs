@@ -1,5 +1,6 @@
 mod anilist;
 mod auth;
+mod consts;
 mod helpers;
 mod importer;
 mod mal;
@@ -18,7 +19,7 @@ use axum::{
     http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
     Extension, Json, Router,
 };
 use axum_extra::extract::cookie::Key;
@@ -31,9 +32,7 @@ use tokio::{sync::Mutex, time};
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
-use crate::middleware::auth_guard::guard;
-
-use self::{auth::oauth::create_oauth_client, importer::Importer, models::user::DBUser};
+use crate::{auth::oauth::create_oauth_client, importer::Importer, middleware::auth_guard::guard};
 
 #[axum::debug_handler]
 async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
@@ -46,10 +45,10 @@ async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
 #[axum::debug_handler]
 async fn test_handler(
     State(state): State<AppState>,
-    Extension(user): Extension<DBUser>,
+    // Extension(user): Extension<DBUser>,
 ) -> impl IntoResponse {
-    let user_id = user.id;
-    let mut importer = state.importer.lock().await;
+    // let user_id = user.id;
+    let importer = state.importer.lock().await;
     // importer.add(2024, user_id.clone());
     // importer.add(36098, user_id.clone());
     // importer.add(59226, user_id.clone());
@@ -143,7 +142,8 @@ async fn main() {
                 .route("/test", get(test_handler))
                 .route("/debug", get(debug_route))
                 .route("/auth/me", get(routes::user::get_user))
-                // .route("/anime", get(routes::anime::get_anime_list))
+                .route("/user/list", get(routes::user::get_list))
+                .route("/user/list", post(routes::user::update_list_order))
                 // .route("/order", post(routes::anime::update_list_order))
                 .route_layer(from_fn_with_state(state.clone(), guard))
                 // .route("/anime/:id", get(routes::anime::get_anime))

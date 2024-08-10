@@ -18,7 +18,7 @@ use crate::anilist::{
 use crate::models::anime::{insert_animes, InsertAnime};
 use crate::models::anime_users::link_user_to_anime;
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Serialize)]
 pub enum AnimeWatchStatus {
     Watching,
     Completed,
@@ -41,6 +41,19 @@ impl FromStr for AnimeWatchStatus {
             "dropped" => Ok(AnimeWatchStatus::Dropped),
             "plan_to_watch" => Ok(AnimeWatchStatus::PlanToWatch),
             _ => Err(ParseAnimeWatchStatusError),
+        }
+    }
+}
+
+impl From<String> for AnimeWatchStatus {
+    fn from(value: String) -> Self {
+        match value.as_str() {
+            "WATCHING" => AnimeWatchStatus::Watching,
+            "COMPLETED" => AnimeWatchStatus::Completed,
+            "ON_HOLD" => AnimeWatchStatus::OnHold,
+            "DROPPED" => AnimeWatchStatus::Dropped,
+            "PLAN_TO_WATCH" => AnimeWatchStatus::PlanToWatch,
+            _ => panic!("Invalid watch status {}", value),
         }
     }
 }
@@ -114,10 +127,10 @@ impl Importer {
             e.insert(vec![user_entry]);
         } else {
             let current = self.queue.get_mut(&id).unwrap();
-            let has = current
+            let current_entry = current
                 .iter()
                 .find(|entry| entry.user_id == user_entry.user_id);
-            if let Some(_) = has {
+            if current_entry.is_some() {
                 current.push(user_entry);
                 inserted = true;
             } else {
@@ -142,7 +155,7 @@ impl Importer {
 
     pub fn add_all(&mut self, entries: Vec<AnimeUserEntry>) {
         entries.iter().for_each(|entry| {
-            let anime_id = entry.anime_id.clone();
+            let anime_id = entry.anime_id;
             self.add(anime_id, entry.clone());
         });
     }
