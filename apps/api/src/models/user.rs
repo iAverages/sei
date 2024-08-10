@@ -110,3 +110,15 @@ pub struct SafeUser {
     pub mal_id: i32,
     pub created_at: NaiveDateTime,
 }
+
+impl From<DBUser> for SafeUser {
+    fn from(user: DBUser) -> Self {
+        SafeUser {
+            created_at: user.created_at,
+            mal_id: user.mal_id,
+            picture: user.picture,
+            id: user.id,
+            name: user.name,
+        }
+    }
+}

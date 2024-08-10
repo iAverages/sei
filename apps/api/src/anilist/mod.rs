@@ -23,8 +23,8 @@ fn get_header_i32(response: &Response, key: String, default: i32) -> i32 {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 pub struct GqlQuery {
-    query: String,
-    variables: Value,
+    pub query: String,
+    pub variables: Value,
 }
 
 impl Display for GqlQuery {
@@ -33,16 +33,23 @@ impl Display for GqlQuery {
     }
 }
 
+#[derive(Debug)]
 pub struct AniListResult {
     pub response: Result<AnilistResponse, anyhow::Error>,
-    pub rate_limit_remaining: i32,
-    pub rate_limit_current: i32,
+    pub query: GqlQuery,
+    // pub rate_limit_remaining: i32,
+    // pub rate_limit_current: i32,
     pub rate_limit_reset: i32,
-    pub retry_after: i32,
+    // pub retry_after: i32,
 }
 
-pub async fn get_animes_from_anilist(reqwest: &Client, ids: Vec<&u32>) -> AniListResult {
-    let gql_query = generate_gql_query(ids);
+pub async fn get_animes_from_anilist(reqwest: &Client, ids: Vec<u32>) -> AniListResult {
+    let query = generate_gql_query(ids);
+    get_animes_from_anilist_gql(reqwest, query).await
+}
+
+pub async fn get_animes_from_anilist_gql(reqwest: &Client, gql_query: GqlQuery) -> AniListResult {
+    tracing::trace!("GQL Query: {:?}", gql_query);
 
     let res = reqwest
         .post("https://graphql.anilist.co")
@@ -56,10 +63,11 @@ pub async fn get_animes_from_anilist(reqwest: &Client, ids: Vec<&u32>) -> AniLis
             tracing::error!("Failed to get anime from Anilist: {}", e);
             return AniListResult {
                 response: Err(anyhow::Error::new(e)),
-                rate_limit_current: -1,
-                rate_limit_remaining: -1,
+                query: gql_query,
+                // rate_limit_current: -1,
+                // rate_limit_remaining: -1,
                 rate_limit_reset: -1,
-                retry_after: -1,
+                // retry_after: -1,
             };
         }
     };
@@ -68,6 +76,13 @@ pub async fn get_animes_from_anilist(reqwest: &Client, ids: Vec<&u32>) -> AniLis
     let rate_limit_current = get_header_i32(&res, "x-ratelimit-limit".to_string(), -1);
     let rate_limit_reset = get_header_i32(&res, "x-ratelimit-reset".to_string(), -1);
     let retry_after = get_header_i32(&res, "retry-after".to_string(), -1);
+
+    tracing::debug!(
+        retry_after,
+        rate_limit_reset,
+        rate_limit_current,
+        rate_limit_remaining
+    );
 
     let text = res.text().await.unwrap();
     let anime: Result<AnilistResponse, serde_json::Error> = serde_json::from_str(&text);
@@ -81,11 +96,12 @@ pub async fn get_animes_from_anilist(reqwest: &Client, ids: Vec<&u32>) -> AniLis
     };
 
     AniListResult {
+        query: gql_query,
         response: anime,
-        rate_limit_current,
-        rate_limit_remaining,
+        // rate_limit_current,
+        // rate_limit_remaining,
         rate_limit_reset,
-        retry_after,
+        // retry_after,
     }
 }
 
@@ -93,7 +109,7 @@ pub async fn get_animes_from_anilist(reqwest: &Client, ids: Vec<&u32>) -> AniLis
 // to ensure it can grab the data from the query response
 pub const MAX_ANILIST_PER_QUERY: usize = 35;
 
-pub fn generate_gql_query(ids: Vec<&u32>) -> GqlQuery {
+pub fn generate_gql_query(ids: Vec<u32>) -> GqlQuery {
     let mut ids = ids;
     if ids.len() > MAX_ANILIST_PER_QUERY {
         tracing::error!("Too many ids: {}", ids.len());
@@ -145,6 +161,10 @@ anime{}: Media(idMal: $anime{}, type: ANIME) {
     }
   }
 "#;
+
+pub fn lines_per_query() -> usize {
+    ANILIST_MEDIA_SELECTION.split('\n').count()
+}
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]

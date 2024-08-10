@@ -13,11 +13,12 @@ use oauth2::{
 };
 use serde::Deserialize;
 
-use crate::AppState;
 use crate::{
     auth::session::create_session,
+    importer::{AnimeUserEntry, AnimeWatchStatus},
     models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser},
 };
+use crate::{mal::get_mal_user_list, AppState};
 
 #[derive(Deserialize)]
 pub struct MalRedirectQuery {
@@ -79,7 +80,7 @@ pub async fn handle_mal_callback(
     let user = find_user_mal_id(state.clone(), mal_user_id).await;
 
     let user = match user {
-        Some(user) => {
+        Some(mut user) => {
             // Ensure the user has the latest token
             sqlx::query!(
                 "UPDATE users SET mal_access_token = ? WHERE id = ?",
@@ -89,12 +90,8 @@ pub async fn handle_mal_callback(
             .execute(&state.db)
             .await
             .expect("Failed to update user token");
-
-            // Fetch user again with updated token
-            // TODO: Update the token in the user object instead of fetching it again
-            find_user_mal_id(state.clone(), mal_user_id)
-                .await
-                .expect("Failed to find user")
+            user.mal_access_token = token;
+            user
         }
         None => {
             create_user(
@@ -111,17 +108,33 @@ pub async fn handle_mal_callback(
         }
     };
 
-    let cookie = create_session(state.clone(), user.id).await.unwrap();
-
+    let user_id = user.id.clone();
+    let cookie = create_session(state.clone(), user_id.clone())
+        .await
+        .unwrap();
     let updated_jar = jar.add(cookie);
 
-    // let reqwest = state.reqwest.clone();
-    // let mal_user_list = get_mal_user_list(reqwest, user).await;
-    //
-    // if let Ok(mal) = mal_user_list {
-    //     let ids = mal.data.iter().map(|item| item.node.id).collect::<Vec<_>>();
-    //     importer::import_anime_from_ids(state, ids);
-    // }
+    let reqwest = state.reqwest.clone();
+    let mal_user_list = get_mal_user_list(reqwest, user).await;
+
+    if let Ok(mal) = mal_user_list {
+        let ids = mal
+            .data
+            .iter()
+            .map(|item| AnimeUserEntry {
+                status: item
+                    .list_status
+                    .status
+                    .parse::<AnimeWatchStatus>()
+                    .map_err(|_| AnimeWatchStatus::Watching)
+                    .expect("Failed to parse watch status"),
+                user_id: user_id.clone(),
+                anime_id: item.node.id,
+            })
+            .collect::<Vec<_>>();
+        let mut importer = state.importer.lock().await;
+        importer.add_all(ids);
+    }
 
     (updated_jar, Redirect::temporary("http://localhost:3000"))
 }

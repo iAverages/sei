@@ -1,4 +1,4 @@
-use crate::models::user::{get_user_by_session, SafeUser};
+use crate::models::user::get_user_by_session;
 use crate::AppState;
 
 use axum::extract::{Request, State};
@@ -26,13 +26,7 @@ pub async fn guard(
 
     let user = user.unwrap();
 
-    request.extensions_mut().insert(SafeUser {
-        id: user.id,
-        name: user.name,
-        picture: user.picture,
-        mal_id: user.mal_id,
-        created_at: user.created_at,
-    });
+    request.extensions_mut().insert(user);
 
     Ok(next.run(request).await)
 }
