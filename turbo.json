@@ -1,14 +1,26 @@
 {
     "$schema": "https://turbo.build/schema.json",
-    "globalDependencies": [".env", "**/.env.*local"],
-    "globalEnv": ["PKG_CONFIG_PATH"],
+    "globalDependencies": [
+        ".env",
+        "**/.env.*local"
+    ],
+    "globalEnv": [
+        "PKG_CONFIG_PATH"
+    ],
+    "ui": "tui",
     "tasks": {
         "build": {
-            "dependsOn": ["^build"],
-            "outputs": ["dist/**"]
+            "dependsOn": [
+                "^build"
+            ],
+            "outputs": [
+                "dist/**"
+            ]
         },
         "lint": {
-            "dependsOn": ["^lint"]
+            "dependsOn": [
+                "^lint"
+            ]
         },
         "dev": {
             "cache": false,

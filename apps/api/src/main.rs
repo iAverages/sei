@@ -1,32 +1,34 @@
-mod anime;
-mod background;
+// mod anime_old;
+// mod background_old;
+mod anilist;
 mod helpers;
 mod importer;
+mod routes;
+// mod importer;
+mod auth;
 mod middleware;
 mod models;
-mod queue;
-mod routes;
-mod types;
+// mod queue_old;
+// mod routes_old;
+// mod types_old;
 
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
-    sync::Arc,
+    sync::{Arc, Mutex},
 };
 
 use axum::{
-    extract::{FromRef, State},
+    extract::FromRef,
     http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::get,
     Extension, Json, Router,
 };
 use axum_extra::extract::cookie::Key;
-use deadqueue::unlimited::Queue;
 use dotenvy::dotenv;
 use helpers::json_response;
-use oauth2::{basic::BasicClient, AuthUrl, ClientId, ClientSecret, RedirectUrl, TokenUrl};
 use reqwest::Client;
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
@@ -35,65 +37,23 @@ use tower_http::services::ServeDir;
 
 use crate::middleware::auth_guard::guard;
 
-fn create_oauth_client(api_url: String, client_id: String, client_secret: String) -> BasicClient {
-    let redirect_url = api_url + "/oauth/mal/callback";
-    let auth_url = AuthUrl::new("https://myanimelist.net/v1/oauth2/authorize".to_string())
-        .expect("Invalid authorization endpoint URL");
-    let token_url = TokenUrl::new("https://myanimelist.net/v1/oauth2/token".to_string())
-        .expect("Invalid token endpoint URL");
+use self::{auth::oauth::create_oauth_client, importer::Importer};
 
-    BasicClient::new(
-        ClientId::new(client_id),
-        Some(ClientSecret::new(client_secret)),
-        auth_url,
-        Some(token_url),
-    )
-    .set_redirect_uri(RedirectUrl::new(redirect_url).expect("Invalid redirect URL"))
-}
-
-#[axum::debug_handler]
-async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
-    json_response!(StatusCode::OK, {
-        "queue": {
-            "total": state.import_queue.len(),
-        }
-    })
-}
-
-#[derive(Debug, Clone, serde::Deserialize, serde::Serialize)]
-pub enum ImportQueueItem {
-    UserAnime {
-        times_in_queue: i32,
-        anime_id: i32,
-        user_id: String,
-        anime_watch_status: String,
-    },
-    Anime {
-        times_in_queue: i32,
-        anime_id: i32,
-    },
-    Relationship {
-        times_in_queue: i32,
-        anime_id: i32,
-        related_anime_id: i32,
-        related_anime_type: String,
-    },
-}
-
-type ImportQueue = Queue<ImportQueueItem>;
+// #[axum::debug_handler]
+// async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
+//     json_response!(StatusCode::OK, {
+//         "queue": {
+//             "total": state.import_queue.len(),
+//         }
+//     })
+// }
 
 #[derive(Clone)]
 pub struct AppState {
     key: Key,
     db: sqlx::Pool<sqlx::MySql>,
     reqwest: Client,
-    import_queue: Arc<ImportQueue>,
-}
-
-impl FromRef<AppState> for Arc<ImportQueue> {
-    fn from_ref(state: &AppState) -> Self {
-        state.import_queue.clone()
-    }
+    importer: Arc<Mutex<Importer>>,
 }
 
 impl FromRef<AppState> for sqlx::Pool<sqlx::MySql> {
@@ -141,13 +101,23 @@ async fn main() {
         .expect("Failed to connect to database");
 
     let reqwest = Client::new();
-    let import_queue: Arc<ImportQueue> = Arc::new(ImportQueue::new());
+    let importer = Arc::new(Mutex::new(Importer::new(reqwest.clone(), db_pool.clone())));
+
+    let importer_ref = importer.clone();
+    let mut a = importer_ref.lock().expect("what");
+
+    tracing::info!("Adding 54714 to queue");
+    a.add(54714);
+    a.add(58426);
+    a.add(55102);
+    a.add(2025);
+    a.process().await;
 
     let state = AppState {
         key: Key::generate(),
         db: db_pool,
         reqwest,
-        import_queue,
+        importer,
     };
 
     let oauth_client =
@@ -159,35 +129,31 @@ async fn main() {
             "/api/v1",
             Router::new()
                 .route("/auth/me", get(routes::user::get_user))
-                .route("/anime", get(routes::anime::get_anime_list))
-                .route("/order", post(routes::anime::update_list_order))
+                // .route("/anime", get(routes::anime::get_anime_list))
+                // .route("/order", post(routes::anime::update_list_order))
                 .route_layer(from_fn_with_state(state.clone(), guard))
-                .route("/anime/:id", get(routes::anime::get_anime))
-                .route(
-                    "/anime/:id/relations",
-                    get(routes::anime::get_anime_relations),
-                )
-                .route(
-                    "/anime/:id/import",
-                    get(routes::anime::get_anime_force_import),
-                )
+                // .route("/anime/:id", get(routes::anime::get_anime))
+                // .route(
+                //     "/anime/:id/relations",
+                //     get(routes::anime::get_anime_relations),
+                // )
+                // .route(
+                //     "/anime/:id/import",
+                //     get(routes::anime::get_anime_force_import),
+                // )
                 .with_state(state.clone()),
         )
-        .route("/debug", get(debug_route))
         .route(
             "/oauth/mal/redirect",
-            get(routes::oauth::handle_mal_redirect),
+            get(routes::auth::handle_mal_redirect),
         )
         .route(
             "/oauth/mal/callback",
-            get(routes::oauth::handle_mal_callback),
+            get(routes::auth::handle_mal_callback),
         )
         .layer(Extension(oauth_client))
         .layer(cors)
         .with_state(state.clone());
-
-    background::start_background_job(state.clone());
-    queue::import_queue_worker(state);
 
     let address = SocketAddr::from(([0, 0, 0, 0], 3001));
     let listener = tokio::net::TcpListener::bind(address).await.unwrap();

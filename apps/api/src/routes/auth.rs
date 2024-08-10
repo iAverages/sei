@@ -4,62 +4,20 @@ use axum::{
     Extension,
 };
 use axum_extra::extract::{
-    cookie::{Cookie, PrivateCookieJar, SameSite},
+    cookie::{Cookie, PrivateCookieJar},
     CookieJar,
 };
-use chrono::Utc;
 use oauth2::{
     basic::BasicClient, reqwest::async_http_client, AuthorizationCode, CsrfToken,
     PkceCodeChallenge, PkceCodeVerifier, TokenResponse,
 };
-use rand::{rngs::StdRng, RngCore, SeedableRng};
 use serde::Deserialize;
-use time;
 
-use crate::{anime::get_mal_user_list, AppState};
+use crate::AppState;
 use crate::{
-    importer,
-    models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser, User},
+    auth::session::create_session,
+    models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser},
 };
-
-pub async fn create_session(state: AppState, user: User) -> Result<Cookie<'static>, anyhow::Error> {
-    let expiration = Utc::now()
-        .checked_add_signed(chrono::Duration::days(30))
-        .expect("valid timestamp");
-
-    let mut token_str = [0u8; 32];
-    StdRng::from_entropy().fill_bytes(&mut token_str);
-    let token = hex::encode(token_str);
-
-    let cookie = Cookie::build(("token", token.clone()))
-        .path("/")
-        .expires(
-            time::OffsetDateTime::from_unix_timestamp(expiration.timestamp())
-                .expect("valid timestamp"),
-        )
-        .max_age(time::Duration::days(30))
-        .http_only(true)
-        .secure(true)
-        .same_site(SameSite::None)
-        .build();
-
-    let res = sqlx::query!(
-        "INSERT INTO sessions (user_id, id, expires_at) VALUES (?, ?, ?)",
-        user.id,
-        token,
-        expiration
-    )
-    .execute(&state.db)
-    .await;
-
-    match res {
-        Ok(_) => Ok(cookie.clone()),
-        Err(err) => {
-            tracing::error!("Error creating session: {:?}", err);
-            Err(err.into())
-        }
-    }
-}
 
 #[derive(Deserialize)]
 pub struct MalRedirectQuery {
@@ -153,17 +111,17 @@ pub async fn handle_mal_callback(
         }
     };
 
-    let cookie = create_session(state.clone(), user.clone()).await.unwrap();
+    let cookie = create_session(state.clone(), user.id).await.unwrap();
 
     let updated_jar = jar.add(cookie);
 
-    let reqwest = state.reqwest.clone();
-    let mal_user_list = get_mal_user_list(reqwest, user).await;
-
-    if let Ok(mal) = mal_user_list {
-        let ids = mal.data.iter().map(|item| item.node.id).collect::<Vec<_>>();
-        importer::import_anime_from_ids(state, ids);
-    }
+    // let reqwest = state.reqwest.clone();
+    // let mal_user_list = get_mal_user_list(reqwest, user).await;
+    //
+    // if let Ok(mal) = mal_user_list {
+    //     let ids = mal.data.iter().map(|item| item.node.id).collect::<Vec<_>>();
+    //     importer::import_anime_from_ids(state, ids);
+    // }
 
     (updated_jar, Redirect::temporary("http://localhost:3000"))
 }
