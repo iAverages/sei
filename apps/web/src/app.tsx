@@ -8,14 +8,14 @@ import { QueryClient, QueryClientProvider } from "@tanstack/solid-query";
 const queryClient = new QueryClient({});
 
 const App: Component = () => {
-    return (
-        <QueryClientProvider client={queryClient}>
-            <ColorModeScript />
-            <ColorModeProvider>
-                <Router>{routes}</Router>
-            </ColorModeProvider>
-        </QueryClientProvider>
-    );
+  return (
+    <QueryClientProvider client={queryClient}>
+      <ColorModeScript />
+      <ColorModeProvider>
+        <Router>{routes}</Router>
+      </ColorModeProvider>
+    </QueryClientProvider>
+  );
 };
 
 export default App;
