@@ -43,16 +43,12 @@ async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
 }
 
 #[axum::debug_handler]
-async fn test_handler(
-    State(state): State<AppState>,
-    // Extension(user): Extension<DBUser>,
-) -> impl IntoResponse {
-    // let user_id = user.id;
-    let importer = state.importer.lock().await;
-    // importer.add(2024, user_id.clone());
-    // importer.add(36098, user_id.clone());
-    // importer.add(59226, user_id.clone());
-    // importer.add(59027, user_id);
+async fn test_handler(State(state): State<AppState>) -> impl IntoResponse {
+    let mut importer = state.importer.lock().await;
+    importer.add_anime_only(2025);
+    // importer.add_anime_only(36098);
+    // importer.add_anime_only(59226);
+    // importer.add_anime_only(59027);
 
     json_response!(StatusCode::OK, {
         "queue": importer.stats()

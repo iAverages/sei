@@ -33,6 +33,10 @@ pub async fn link_user_to_anime(
     let flat_entries: Vec<AnimeUserEntry> =
         items.into_iter().flat_map(|(_, strings)| strings).collect();
 
+    if flat_entries.is_empty() {
+        return Ok(());
+    }
+
     query_builder.push_values(flat_entries, |mut b, item| {
         let status_str: String = item.status.into();
         b.push_bind(item.user_id)
@@ -45,7 +49,7 @@ pub async fn link_user_to_anime(
 
     let q = query_builder.build();
 
-    q.execute(db).await.expect("Failed to insert anime");
+    q.execute(db).await.expect("Failed to insert anime_user");
 
     Ok(())
 }

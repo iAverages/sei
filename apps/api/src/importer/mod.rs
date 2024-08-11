@@ -85,6 +85,8 @@ pub struct Importer {
 
     // The current queue we are processing
     queue: HashMap<u32, Vec<AnimeUserEntry>>,
+    // anime id: Vec<(related anime id, relation type)>
+    relation_cache: HashMap<i32, Vec<(u32, String)>>,
 
     // IDs we have seen recently.
     // IDs here have been processed in the
@@ -94,6 +96,8 @@ pub struct Importer {
 
     // List of IDs to not attempt to import
     // Mainly used for ids that do not exist on anilist
+    // TODO: Store this in db so it persists between restarts
+    // Add expiry also
     ignore_ids: HashSet<u32>,
 }
 
@@ -103,6 +107,7 @@ impl Importer {
             reqwest,
             db,
             queue: HashMap::new(),
+            relation_cache: HashMap::new(),
             seen_recently: HashSet::new(),
             ignore_ids: HashSet::new(),
         }
@@ -115,6 +120,8 @@ impl Importer {
         }
     }
 
+    // TODO: Clean this up so we can import an anime without a user entry being required
+    // probably need separate hashmaps for this
     pub fn add(&mut self, id: u32, user_entry: AnimeUserEntry) -> bool {
         if self.ignore_ids.contains(&id) {
             tracing::warn!("Tried to insert id {:?}, but it is ignored", id);
@@ -130,6 +137,7 @@ impl Importer {
             let current_entry = current
                 .iter()
                 .find(|entry| entry.user_id == user_entry.user_id);
+            // TODO: isnt this wrong?
             if current_entry.is_some() {
                 current.push(user_entry);
                 inserted = true;
@@ -147,6 +155,36 @@ impl Importer {
             anime = id,
             user_id = id,
             "Anime {} queue with user",
+            if inserted { "added to" } else { "already in" }
+        );
+
+        inserted
+    }
+
+    pub fn add_anime_only(&mut self, id: u32) -> bool {
+        if self.ignore_ids.contains(&id) {
+            tracing::warn!("Tried to insert id {:?}, but it is ignored", id);
+            return false;
+        }
+
+        if self.seen_recently.contains(&id) {
+            tracing::warn!(
+                "Tried to insert id {:?}, but it has been imported recently",
+                id
+            );
+            return false;
+        }
+
+        let mut inserted = false;
+        if let Vacant(e) = self.queue.entry(id) {
+            inserted = true;
+            e.insert(vec![]);
+        }
+
+        tracing::debug!(
+            anime = id,
+            user_id = id,
+            "Anime {} queue",
             if inserted { "added to" } else { "already in" }
         );
 
@@ -243,8 +281,48 @@ impl Importer {
 
             tracing::info!("Got {:?} animes from anilist", anime_data.len());
 
+            for anime in anime_data.clone() {
+                if anime.relations.is_none() {
+                    tracing::debug!(anime = anime.id_mal, "Anime had no relations");
+                    continue;
+                }
+
+                let relations = anime.relations.unwrap().edges;
+
+                for relation in relations {
+                    if relation.node.id_mal.is_none() {
+                        tracing::debug!(
+                            relation = relation.node.id_mal,
+                            anime = anime.id_mal,
+                            "Relation had no mal id"
+                        );
+                        continue;
+                    }
+
+                    if relation.relation_type != "PREQUEL" && relation.relation_type != "SEQUEL" {
+                        tracing::debug!(
+                            relation = relation.node.id_mal,
+                            anime = anime.id_mal,
+                            "Relation is not prequel or sequal"
+                        );
+                        continue;
+                    }
+
+                    let mal_id = relation.node.id_mal.unwrap();
+                    let new_relation = (mal_id as u32, relation.relation_type);
+                    if let Vacant(e) = self.relation_cache.entry(mal_id) {
+                        e.insert(vec![new_relation]);
+                    } else {
+                        let value = self.relation_cache.get_mut(&mal_id).unwrap();
+                        value.push(new_relation);
+                    }
+                    self.add_anime_only(mal_id as u32);
+                }
+            }
+
             let formatted = anime_data
                 .iter()
+                // Add related animes to queue and
                 // TODO: CLONE AAAAAAAa
                 .map(|anime| InsertAnime {
                     id_mal: anime.id_mal.unwrap(),
