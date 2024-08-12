@@ -167,7 +167,7 @@ pub struct DBAnime {
     pub created_at: chrono::NaiveDateTime,
 }
 
-#[derive(Debug, serde::Serialize, serde::Deserialize)]
+#[derive(Debug, serde::Serialize, serde::Deserialize, Clone)]
 pub struct DBUserAnime {
     pub id: i32,
     pub english_title: Option<String>,

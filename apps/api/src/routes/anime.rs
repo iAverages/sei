@@ -11,7 +11,7 @@ use serde_json::json;
 use sqlx::{prelude::FromRow, query_as, Execute, MySql, QueryBuilder};
 
 use crate::{
-    anime::{self, AnimeTableRow, DBUserAnime, ListStatus},
+    anime::{self, AnimeTableRow, DBUserAnime, ListStatus, LocalAnineListResult},
     helpers::json_response,
     models::user::User,
     types::CurrentUser,
@@ -25,6 +25,11 @@ pub struct AnimeUserListResponse {
     pub import_status: ListStatus,
     pub relations: Vec<i32>,
 }
+
+struct AnimeIdResponse {
+    anime_id: i32,
+}
+
 #[axum::debug_handler]
 pub async fn get_anime_list(
     State(state): State<AppState>,
@@ -48,53 +53,129 @@ pub async fn get_anime_list(
 
     let local_animes = local_animes.expect("Failed to get local animes");
     let mal_animes = mal_animes.expect("Failed to get mal animes");
-    let mut status = ListStatus::Imported;
+    let status;
 
-    if mal_animes.data.len() != local_animes.animes.len() {
-        tracing::info!("Mal animes: {:?}", mal_animes.data.len());
-        tracing::info!("Local animes: {:?}", local_animes.animes.len());
+    tracing::info!("Mal animes: {:?}", mal_animes.data.len());
+    tracing::info!("Local animes: {:?}", local_animes.animes.len());
 
-        if local_animes.animes.is_empty() {
-            status = ListStatus::Importing;
-        } else {
-            status = ListStatus::Updating;
-        }
-
-        mal_animes.data.iter().for_each(|anime| {
-            if !local_animes
-                .animes
-                .iter()
-                .any(|local| local.id == anime.node.id)
-            {
-                state.import_queue.push(ImportQueueItem::UserAnime {
-                    anime_id: anime.node.id,
-                    user_id: full_user.id.clone(),
-                    anime_watch_status: anime.list_status.status.clone(),
-                    times_in_queue: 0,
-                });
-            }
-        });
+    if mal_animes.data.len() == local_animes.animes.len() {
+        status = ListStatus::Imported;
+    } else if local_animes.animes.is_empty() {
+        status = ListStatus::Importing;
+    } else {
+        status = ListStatus::Updating;
     }
 
-    let list_status = get_user_watch_status(
-        state.db.clone(),
-        mal_animes
-            .data
+    mal_animes.data.iter().for_each(|anime| {
+        let local_anime = local_animes
+            .animes
             .iter()
-            .map(|a| a.node.id)
-            .collect::<Vec<i32>>(),
-    )
-    .await
-    .unwrap_or(vec![]);
+            .find(|local| local.id == anime.node.id);
 
-    let res = AnimeUserListResponse {
-        animes: local_animes.animes,
-        list_status,
-        import_status: status,
-        relations: vec![],
+        if local_anime.is_none() {
+            state.import_queue.push(ImportQueueItem::UserAnime {
+                anime_id: anime.node.id,
+                user_id: full_user.id.clone(),
+                anime_watch_status: anime.list_status.status.clone(),
+                times_in_queue: 0,
+            });
+            return;
+        }
+
+        let local_anime = local_anime.unwrap();
+
+        if local_anime.watch_status != anime.list_status.status {
+            state.import_queue.push(ImportQueueItem::UserAnime {
+                anime_id: anime.node.id,
+                user_id: full_user.id.clone(),
+                anime_watch_status: anime.list_status.status.clone(),
+                times_in_queue: 0,
+            });
+        }
+    });
+
+    let user_order = query_as!(
+        AnimeIdResponse,
+        r#"
+        SELECT anime_id FROM anime_users WHERE user_id = ? ORDER BY watch_priority
+        "#,
+        full_user.id
+    );
+
+    let db_order = user_order
+        .fetch_all(&state.db)
+        .await
+        .expect("Failed to get anime order");
+
+    let mut ordered_animes = vec![];
+
+    for item in db_order {
+        let anime = local_animes
+            .animes
+            .iter()
+            .find(|anime| anime.id == item.anime_id)
+            .cloned();
+
+        if anime.is_none() {
+            continue;
+        }
+
+        ordered_animes.push(anime.unwrap());
+    }
+
+    let res = LocalAnineListResult {
+        animes: ordered_animes,
+        status,
     };
 
     json_response!(StatusCode::OK, res)
+    // let mut status = ListStatus::Imported;
+
+    // if mal_animes.data.len() != local_animes.animes.len() {
+    //     tracing::info!("Mal animes: {:?}", mal_animes.data.len());
+    //     tracing::info!("Local animes: {:?}", local_animes.animes.len());
+
+    //     if local_animes.animes.is_empty() {
+    //         status = ListStatus::Importing;
+    //     } else {
+    //         status = ListStatus::Updating;
+    //     }
+
+    //     mal_animes.data.iter().for_each(|anime| {
+    //         if !local_animes
+    //             .animes
+    //             .iter()
+    //             .any(|local| local.id == anime.node.id)
+    //         {
+    //             state.import_queue.push(ImportQueueItem::UserAnime {
+    //                 anime_id: anime.node.id,
+    //                 user_id: full_user.id.clone(),
+    //                 anime_watch_status: anime.list_status.status.clone(),
+    //                 times_in_queue: 0,
+    //             });
+    //         }
+    //     });
+    // }
+
+    // let list_status = get_user_watch_status(
+    //     state.db.clone(),
+    //     mal_animes
+    //         .data
+    //         .iter()
+    //         .map(|a| a.node.id)
+    //         .collect::<Vec<i32>>(),
+    // )
+    // .await
+    // .unwrap_or(vec![]);
+
+    // let res = AnimeUserListResponse {
+    //     animes: local_animes.animes,
+    //     list_status,
+    //     import_status: status,
+    //     relations: vec![],
+    // };
+
+    // json_response!(StatusCode::OK, res)
 
     // tracing::info!("Anime list: {:?}", animes.data.len());
 
