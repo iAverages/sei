@@ -14,7 +14,7 @@
         "@tanstack/solid-query-devtools": "^5.18.1",
         "autoprefixer": "^10.4.17",
         "postcss": "^8.4.33",
-        "solid-devtools": "^0.29.3",
+        "solid-devtools": "^0.30.0",
         "tailwindcss": "^3.4.1",
         "vite": "^5.0.11",
         "vite-plugin-solid": "^2.8.2",
