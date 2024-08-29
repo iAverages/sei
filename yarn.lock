@@ -200,6 +200,13 @@
   dependencies:
     "@floating-ui/dom" "^1.6.7"
 
+"@corvu/utils@~0.4.0":
+  version "0.4.0"
+  resolved "https://registry.yarnpkg.com/@corvu/utils/-/utils-0.4.0.tgz#ee74da2cc84b380588804efa18d9115ab50441c9"
+  integrity sha512-LTjH/gSf4t/slzGoQdFYWrAykHp3A7JZYH+KjM5KCppVjDEY7pLjZkMTHU/vPF7gvjiXDYgA+6q68eiHRiJ8wA==
+  dependencies:
+    "@floating-ui/dom" "^1.6.7"
+
 "@esbuild/aix-ppc64@0.21.5":
   version "0.21.5"
   resolved "https://registry.yarnpkg.com/@esbuild/aix-ppc64/-/aix-ppc64-0.21.5.tgz#c7184a326533fcdf1b8ee0733e21c713b975575f"
@@ -393,15 +400,17 @@
     "@jridgewell/resolve-uri" "^3.1.0"
     "@jridgewell/sourcemap-codec" "^1.4.14"
 
-"@kobalte/core@^0.12.1":
-  version "0.12.6"
-  resolved "https://registry.yarnpkg.com/@kobalte/core/-/core-0.12.6.tgz#767ac17932111e44e46490eb48700cdd9ee21b1c"
-  integrity sha512-+Ta2o2wEqZ2fCqLMkvjT40VHNmcFKdGe8TNDVQbbMPk66qoU6g/DDRFR/Ib7eAjb+C95VoIyk6zaafos2VOo0w==
+"@kobalte/core@^0.13.0":
+  version "0.13.4"
+  resolved "https://registry.yarnpkg.com/@kobalte/core/-/core-0.13.4.tgz#0a065503ceddc73af7656319c866b12bef42d3f3"
+  integrity sha512-ElvazoxoQU/z5pQUdHtXAzjiZA60J+Fo36WgO+j8sMvycIGwrlv+Fdr+uXcLSm1onYOYoSG1+vumD3Ce5OYzzw==
   dependencies:
     "@floating-ui/dom" "^1.5.1"
     "@internationalized/date" "^3.4.0"
     "@internationalized/number" "^3.2.1"
     "@kobalte/utils" "^0.9.0"
+    "@solid-primitives/props" "^3.1.8"
+    solid-presence "^0.1.6"
     solid-prevent-scroll "^0.1.4"
 
 "@kobalte/utils@^0.9.0":
@@ -1653,6 +1662,13 @@ solid-js@^1.8.11:
     seroval "^1.1.0"
     seroval-plugins "^1.1.0"
 
+solid-presence@^0.1.6:
+  version "0.1.8"
+  resolved "https://registry.yarnpkg.com/solid-presence/-/solid-presence-0.1.8.tgz#c8713c7d52122b128d22fc1c0afdb08b0fb93d07"
+  integrity sha512-pWGtXUFWYYUZNbg5YpG5vkQJyOtzn2KXhxYaMx/4I+lylTLYkITOLevaCwMRN+liCVk0pqB6EayLWojNqBFECA==
+  dependencies:
+    "@corvu/utils" "~0.4.0"
+
 solid-prevent-scroll@^0.1.4:
   version "0.1.9"
   resolved "https://registry.yarnpkg.com/solid-prevent-scroll/-/solid-prevent-scroll-0.1.9.tgz#28ee0c508d607bf96223607c52b10b4d4e7db7ac"
@@ -1674,16 +1690,7 @@ source-map-js@^1.2.0:
   resolved "https://registry.yarnpkg.com/source-map-js/-/source-map-js-1.2.0.tgz#16b809c162517b5b8c3e7dcd315a2a5c2612b2af"
   integrity sha512-itJW8lvSA0TXEphiRoawsCksnlf8SyvmFzIhltqAHluXd88pkCd+cXJVHTDwdCr0IzwptSm035IHQktUu1QUMg==
 
-"string-width-cjs@npm:string-width@^4.2.0":
-  version "4.2.3"
-  resolved "https://registry.yarnpkg.com/string-width/-/string-width-4.2.3.tgz#269c7117d27b05ad2e536830a8ec895ef9c6d010"
-  integrity sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==
-  dependencies:
-    emoji-regex "^8.0.0"
-    is-fullwidth-code-point "^3.0.0"
-    strip-ansi "^6.0.1"
-
-string-width@^4.1.0:
+"string-width-cjs@npm:string-width@^4.2.0", string-width@^4.1.0:
   version "4.2.3"
   resolved "https://registry.yarnpkg.com/string-width/-/string-width-4.2.3.tgz#269c7117d27b05ad2e536830a8ec895ef9c6d010"
   integrity sha512-wKyQRQpjJ0sIp62ErSZdGsjMJWsap5oRNihHhu6G7JVO/9jIB6UyevL+tXuOqrng8j/cxKTWyWUwvSTriiZz/g==
@@ -1701,14 +1708,7 @@ string-width@^5.0.1, string-width@^5.1.2:
     emoji-regex "^9.2.2"
     strip-ansi "^7.0.1"
 
-"strip-ansi-cjs@npm:strip-ansi@^6.0.1":
-  version "6.0.1"
-  resolved "https://registry.yarnpkg.com/strip-ansi/-/strip-ansi-6.0.1.tgz#9e26c63d30f53443e9489495b2105d37b67a85d9"
-  integrity sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==
-  dependencies:
-    ansi-regex "^5.0.1"
-
-strip-ansi@^6.0.0, strip-ansi@^6.0.1:
+"strip-ansi-cjs@npm:strip-ansi@^6.0.1", strip-ansi@^6.0.0, strip-ansi@^6.0.1:
   version "6.0.1"
   resolved "https://registry.yarnpkg.com/strip-ansi/-/strip-ansi-6.0.1.tgz#9e26c63d30f53443e9489495b2105d37b67a85d9"
   integrity sha512-Y38VPSHcqkFrCpFnQ9vuSXmquuv5oXOKpGeT6aGrr3o3Gc9AlVa6JBfUSOCnbxGGZF+/0ooI7KrPuUSztUdU5A==
