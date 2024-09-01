@@ -13,8 +13,8 @@ pub struct AnimePicture {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct AnimeBroadcast {
-    pub day_of_the_week: String,
-    pub start_time: String,
+    pub day_of_the_week: Option<String>,
+    pub start_time: Option<String>,
 }
 
 #[derive(Deserialize, Serialize, Clone)]
@@ -68,7 +68,6 @@ pub async fn get_mal_user_list(
     let text = res.text().await?;
     let anime: MalAnimeListResponse = serde_json::from_str(&text)
         .with_context(|| format!("Unable to deserialise response. Body was: \"{}\"", text))?;
-
     let paging = anime.paging.clone();
 
     tracing::info!("Got {} anime from MAL", anime.data.len());

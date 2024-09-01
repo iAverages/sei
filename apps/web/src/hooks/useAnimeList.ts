@@ -75,10 +75,14 @@ export const useAnimeList = ({
         const ap = aEntry.watch_priority;
         const bp = bEntry.watch_priority;
 
+        if (ap === 4 || bp === 4) {
+          console.log({ aEntry, bEntry, ap, bp });
+        }
+
         // Ensure newly added entries are shown last rather than first;
         // Happens when a new anime is added to the list
         // or changes from releasing to complete
-        if (ap == 0) return -1;
+        if (ap == 0) return 1;
         if (bp == 0) return -1;
 
         if (ap < bp) return -1;

@@ -90,6 +90,7 @@ pub struct DBUser {
     pub mal_id: i32,
     pub mal_access_token: String,
     pub mal_refresh_token: String,
+    pub list_last_update: NaiveDateTime,
     pub created_at: NaiveDateTime,
     pub updated_at: NaiveDateTime,
     pub deleted_at: Option<NaiveDateTime>,

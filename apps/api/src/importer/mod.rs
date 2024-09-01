@@ -15,7 +15,9 @@ use tokio::time::sleep;
 use crate::anilist::{
     get_anime_from_anilist_result, get_animes_from_anilist, MAX_ANILIST_PER_QUERY,
 };
+use crate::consts::MYSQL_PARAM_BIND_LIMIT;
 use crate::models::anime::{insert_animes, InsertAnime};
+use crate::models::anime_relations::create_anime_relation;
 use crate::models::anime_users::link_user_to_anime;
 
 #[derive(Clone, Debug, Serialize)]
@@ -336,7 +338,27 @@ impl Importer {
 
             let _ = insert_animes(&self.db, formatted).await;
             let _ = link_user_to_anime(&self.db, items).await;
+
+            let _ = self.proces_relations().await;
         }
+    }
+
+    async fn proces_relations(&self) {
+        let insert_items: Vec<(u32, u32, String)> = self
+            .relation_cache
+            .iter()
+            .take(MYSQL_PARAM_BIND_LIMIT / 3)
+            .flat_map(|entry| {
+                let anime_id = entry.0;
+                let relations = entry.1;
+
+                relations
+                    .iter()
+                    .map(|rel| (*anime_id as u32, rel.0, rel.1.clone()))
+            })
+            .collect();
+
+        let _ = create_anime_relation(&self.db, insert_items).await;
     }
 
     fn get_items_to_process(&self, max: usize) -> Vec<(u32, Vec<AnimeUserEntry>)> {

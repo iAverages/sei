@@ -1,10 +1,13 @@
 use axum::extract::State;
 use axum::Json;
 use axum::{http::StatusCode, response::IntoResponse, Extension};
+use chrono::{Duration, Utc};
 use serde::Serialize;
 use serde_json::json;
 
 use crate::helpers::json_response;
+use crate::importer::{AnimeUserEntry, AnimeWatchStatus};
+use crate::mal::get_mal_user_list;
 use crate::models::anime::get_released_animes_by_id;
 use crate::models::anime_users::{
     get_user_entrys, link_user_to_anime, update_watch_priority, DBAnimeUser, WatchPriorityUpdate,
@@ -31,6 +34,45 @@ pub async fn get_list(
     Extension(user): Extension<DBUser>,
 ) -> impl IntoResponse {
     let user_id = user.id.clone();
+
+    let now = Utc::now().naive_utc();
+    let five_minutes_ago = now - Duration::minutes(5);
+
+    if user.list_last_update < five_minutes_ago {
+        // Update list in background
+        let user = user.clone();
+        let user_id = user.id.clone();
+        let state = state.clone();
+        tokio::spawn(async move {
+            let mal_user_list = get_mal_user_list(state.reqwest, user).await;
+
+            match mal_user_list {
+                Ok(mal) => {
+                    let ids = mal
+                        .data
+                        .iter()
+                        .map(|item| AnimeUserEntry {
+                            status: item
+                                .list_status
+                                .status
+                                .parse::<AnimeWatchStatus>()
+                                .map_err(|_| AnimeWatchStatus::Watching)
+                                .expect("Failed to parse watch status"),
+                            user_id: user_id.clone(),
+                            anime_id: item.node.id,
+                        })
+                        .collect::<Vec<_>>();
+                    let mut importer = state.importer.lock().await;
+                    importer.add_all(ids);
+                }
+                Err(err) => {
+                    // TODO: Handle better?
+                    tracing::error!("{:?}", err)
+                }
+            }
+        });
+    }
+
     // TODO: handle unwrap
     let entries = get_user_entrys(&state.db, user_id).await.unwrap();
 

@@ -4,7 +4,7 @@ use chrono::NaiveDateTime;
 use serde::Deserialize;
 use sqlx::{MySql, Pool, QueryBuilder};
 
-use crate::consts::BIND_LIMIT;
+use crate::consts::MYSQL_PARAM_BIND_LIMIT;
 use crate::importer::{AnimeUserEntry, AnimeWatchStatus};
 
 pub struct DBAnimeUser {
@@ -45,7 +45,8 @@ pub async fn link_user_to_anime(
             .push_bind(0);
     });
 
-    query_builder.push("ON DUPLICATE KEY UPDATE status = VALUES(status), watch_priority = VALUES(watch_priority), updated_at = VALUES(updated_at)");
+    query_builder
+        .push("ON DUPLICATE KEY UPDATE status = VALUES(status), updated_at = VALUES(updated_at)");
 
     let q = query_builder.build();
 
@@ -69,7 +70,7 @@ pub async fn update_watch_priority(db: &Pool<MySql>, user_id: String, data: Watc
     let mut index = 1;
     let user_id = Arc::new(user_id);
 
-    let groups = data.ids.chunks(BIND_LIMIT / 3);
+    let groups = data.ids.chunks(MYSQL_PARAM_BIND_LIMIT / 3);
 
     for group in groups {
         query_builder.push_values(group.iter(), |mut b, id| {

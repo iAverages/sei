@@ -117,23 +117,29 @@ pub async fn handle_mal_callback(
     let reqwest = state.reqwest.clone();
     let mal_user_list = get_mal_user_list(reqwest, user).await;
 
-    if let Ok(mal) = mal_user_list {
-        let ids = mal
-            .data
-            .iter()
-            .map(|item| AnimeUserEntry {
-                status: item
-                    .list_status
-                    .status
-                    .parse::<AnimeWatchStatus>()
-                    .map_err(|_| AnimeWatchStatus::Watching)
-                    .expect("Failed to parse watch status"),
-                user_id: user_id.clone(),
-                anime_id: item.node.id,
-            })
-            .collect::<Vec<_>>();
-        let mut importer = state.importer.lock().await;
-        importer.add_all(ids);
+    match mal_user_list {
+        Ok(mal) => {
+            let ids = mal
+                .data
+                .iter()
+                .map(|item| AnimeUserEntry {
+                    status: item
+                        .list_status
+                        .status
+                        .parse::<AnimeWatchStatus>()
+                        .map_err(|_| AnimeWatchStatus::Watching)
+                        .expect("Failed to parse watch status"),
+                    user_id: user_id.clone(),
+                    anime_id: item.node.id,
+                })
+                .collect::<Vec<_>>();
+            let mut importer = state.importer.lock().await;
+            importer.add_all(ids);
+        }
+        Err(err) => {
+            // TODO: Handle better?
+            tracing::error!("{:?}", err)
+        }
     }
 
     let html = Html::from("<html><script>window.close()</script></html>");
