@@ -4,7 +4,7 @@
     "scripts": {
         "dev": "dotenvx run -- mprocs",
         "build": "dotenvx run -- turbo build",
-        "db": "dotenvx run -- pnpm run --dir ./packages/database/ prisma",
+        "db": "dotenvx run -- pnpm run --dir ./packages/prisma/ prisma",
         "format:check": "biome format .",
         "format:write": "biome format --write .",
         "lint": "biome lint .",
@@ -13,9 +13,8 @@
         "clean": "turbo clean"
     },
     "devDependencies": {
+        "@dotenvx/dotenvx": "^1.48.4",
         "@biomejs/biome": "2.2.5",
-        "dotenv-cli": "^10.0.0",
-        "prettier": "^3.6.2",
         "turbo": "^2.5.8"
     },
     "engines": {

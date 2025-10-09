@@ -1,9 +1,8 @@
-const {fontFamily} = require("tailwindcss/defaultTheme")
-
-/**@type {import("tailwindcss").Config} */
-module.exports = {
-  darkMode: ["class", '[data-kb-theme="dark"]'],
-  content: ["./src/**/*.{js,jsx,md,mdx,ts,tsx}"],
+/** @type {import('tailwindcss').Config} */
+export default {
+  darkMode: ["variant", [".dark &", '[data-kb-theme="dark"] &']],
+  content: ["./src/**/*.{ts,tsx}"],
+  prefix: "",
   theme: {
     container: {
       center: true,
@@ -65,12 +64,10 @@ module.exports = {
         }
       },
       borderRadius: {
+        xl: "calc(var(--radius) + 4px)",
         lg: "var(--radius)",
         md: "calc(var(--radius) - 2px)",
         sm: "calc(var(--radius) - 4px)"
-      },
-      fontFamily: {
-        sans: ["Inter", ...fontFamily.sans]
       },
       keyframes: {
         "accordion-down": {
@@ -88,13 +85,18 @@ module.exports = {
         "content-hide": {
           from: { opacity: 1, transform: "scale(1)" },
           to: { opacity: 0, transform: "scale(0.96)" }
+        },
+        "caret-blink": {
+          "0%,70%,100%": { opacity: "1" },
+          "20%,50%": { opacity: "0" }
         }
       },
       animation: {
         "accordion-down": "accordion-down 0.2s ease-out",
         "accordion-up": "accordion-up 0.2s ease-out",
         "content-show": "content-show 0.2s ease-out",
-        "content-hide": "content-hide 0.2s ease-out"
+        "content-hide": "content-hide 0.2s ease-out",
+        "caret-blink": "caret-blink 1.25s ease-out infinite"
       }
     }
   },
