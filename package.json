@@ -1,23 +1,25 @@
 {
-  "name": "sei",
-  "private": true,
-  "scripts": {
-    "build": "turbo build",
-    "dev": "turbo dev",
-    "lint": "turbo lint",
-    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-    "prisma": "yarn workspace @sei/prisma db",
-    "db": "yarn workspace @sei/prisma",
-    "api": "yarn workspace @sei/api",
-    "web": "yarn workspace @sei/web"
-  },
-  "devDependencies": {
-    "dotenv-cli": "^10.0.0",
-    "prettier": "^3.6.2",
-    "turbo": "^2.5.8"
-  },
-  "engines": {
-    "node": ">=24"
-  },
-  "packageManager": "pnpm@10.7.1"
+    "name": "sei",
+    "private": true,
+    "scripts": {
+        "dev": "dotenvx run -- mprocs",
+        "build": "dotenvx run -- turbo build",
+        "db": "dotenvx run -- pnpm run --dir ./packages/database/ prisma",
+        "format:check": "biome format .",
+        "format:write": "biome format --write .",
+        "lint": "biome lint .",
+        "lint:fix": "biome lint --write .",
+        "check": "turbo lint typecheck format:check",
+        "clean": "turbo clean"
+    },
+    "devDependencies": {
+        "@biomejs/biome": "2.2.5",
+        "dotenv-cli": "^10.0.0",
+        "prettier": "^3.6.2",
+        "turbo": "^2.5.8"
+    },
+    "engines": {
+        "node": ">=24"
+    },
+    "packageManager": "pnpm@10.7.1"
 }
