@@ -1,25 +1,31 @@
 /// <reference types="vite/client" />
-import { createRootRoute, Link, Outlet } from '@tanstack/solid-router'
-import appCss from '~/styles/app.css?url'
-import * as Solid from 'solid-js'
-import { TanStackRouterDevtools } from '@tanstack/solid-router-devtools'
+
+import { createRootRoute, Outlet } from "@tanstack/solid-router";
+import { ColorModeProvider, ColorModeScript, cookieStorageManagerSSR } from "@kobalte/core";
+import appCss from "~/app.css?url";
+import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
+import { AppSidebar } from "~/components/ui/sidebar/app-sidebar";
+import { Skeleton } from "~/components/ui/skeleton";
+import { Cookies } from "~/lib/cookies";
+import { SiteHeader } from "~/components/ui/sidebar/header";
+import { cn } from "~/lib/utils";
 
 export const Route = createRootRoute({
-  head: () => ({
-    links: [{ rel: 'stylesheet', href: appCss }],
-  }),
-  shellComponent: RootDocument,
-})
+    head: () => ({
+        links: [{ rel: "stylesheet", href: appCss }],
+    }),
+    shellComponent: RootDocument,
+});
 
-function RootDocument({ children }: { children: Solid.JSX.Element }) {
-  return (
-    <>
-      <div>
-        <Link to="/">Index</Link>
-        <Link to="/about">About</Link>
-      </div>
-      {children}
-      <TanStackRouterDevtools position="bottom-right" />
-    </>
-  )
+function RootDocument() {
+    const storageManager = cookieStorageManagerSSR(Cookies.getRaw());
+
+    return (
+        <>
+            <ColorModeScript storageType={storageManager.type} />
+            <ColorModeProvider storageManager={storageManager}>
+                <Outlet />
+            </ColorModeProvider>
+        </>
+    );
 }
