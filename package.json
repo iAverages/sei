@@ -1,30 +1,23 @@
 {
-    "name": "sei",
-    "private": true,
-    "scripts": {
-        "build": "turbo build",
-        "dev": "turbo dev",
-        "lint": "turbo lint",
-        "format": "prettier --write \"**/*.{ts,tsx,md}\"",
-        "prisma": "yarn workspace @sei/prisma db",
-        "db": "yarn workspace @sei/prisma",
-        "api": "yarn workspace @sei/api",
-        "web": "yarn workspace @sei/web",
-        "docker": "docker build . --tag ctr.avrg.dev/sei:latest",
-        "docker:push": "docker push ctr.avrg.dev/sei:latest"
-    },
-    "devDependencies": {
-        "@sei/tsconfig": "*",
-        "dotenv-cli": "^7.3.0",
-        "prettier": "^3.1.1",
-        "turbo": "^2.0.12"
-    },
-    "engines": {
-        "node": ">=18"
-    },
-    "packageManager": "yarn@1.22.19",
-    "workspaces": [
-        "apps/*",
-        "packages/*"
-    ]
+  "name": "sei",
+  "private": true,
+  "scripts": {
+    "build": "turbo build",
+    "dev": "turbo dev",
+    "lint": "turbo lint",
+    "format": "prettier --write \"**/*.{ts,tsx,md}\"",
+    "prisma": "yarn workspace @sei/prisma db",
+    "db": "yarn workspace @sei/prisma",
+    "api": "yarn workspace @sei/api",
+    "web": "yarn workspace @sei/web"
+  },
+  "devDependencies": {
+    "dotenv-cli": "^10.0.0",
+    "prettier": "^3.6.2",
+    "turbo": "^2.5.8"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.7.1"
 }

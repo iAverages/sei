@@ -29,7 +29,7 @@
       devShells.default = with pkgs;
         mkShell {
           packages = [
-            nodejs
+            nodejs_24
             pnpm
             pkg-config
             openssl

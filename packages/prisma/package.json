@@ -8,11 +8,11 @@
         "with-env": "dotenv -e ../../.env"
     },
     "dependencies": {
-        "@prisma/client": "5.12",
-        "prisma": "5.12"
+        "@prisma/client": "~6.17.0",
+        "prisma": "~6.17.0"
     },
     "devDependencies": {
-        "dotenv": "^16.4.1",
-        "dotenv-cli": "^7.3.0"
+        "dotenv": "^17.2.3",
+        "dotenv-cli": "^10.0.0"
     }
 }
