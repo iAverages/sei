@@ -1,54 +1,51 @@
 {
   inputs = {
-    nixpkgs.url = "https://flakehub.com/f/NixOS/nixpkgs/*.tar.gz";
-    rust-overlay.url = "https://flakehub.com/f/oxalica/rust-overlay/*.tar.gz";
+    nixpkgs.url = "github:NixOS/nixpkgs/nixos-unstable";
+    rust-overlay.url = "github:oxalica/rust-overlay";
+    flake-utils.url = "github:numtide/flake-utils";
   };
 
   outputs = {
     nixpkgs,
     rust-overlay,
+    flake-utils,
     ...
-  }: let
-    allSystems = [
-      "x86_64-linux"
-    ];
+  }:
+    flake-utils.lib.eachDefaultSystem (system: let
+      overlays = [(import rust-overlay)];
+      pkgs = import nixpkgs {
+        inherit system overlays;
+      };
 
-    forEachSystem = f:
-      nixpkgs.lib.genAttrs allSystems (system:
-        f {
-          inherit system;
-          pkgs = import nixpkgs {
-            inherit system;
-            overlays = [
-              rust-overlay.overlays.default
-            ];
-          };
-        });
-  in {
-    devShells = forEachSystem ({
-      pkgs,
-      system,
-    }: {
-      default = with pkgs; mkShell {
-        shellHook = ''
-          export PKG_CONFIG_PATH="${openssl.dev}/lib/pkgconfig";
-          export PRISMA_QUERY_ENGINE_BINARY="${prisma-engines}/bin/query-engine";
-          export PRISMA_SCHEMA_ENGINE_BINARY="${prisma-engines}/bin/schema-engine";
-          export PRISMA_FMT_BINARY="${prisma-engines}/bin/prisma-fmt"
-          export PRISMA_QUERY_ENGINE_LIBRARY="${prisma-engines}/lib/libquery_engine.node"
-        '';
-        packages = with pkgs; [
-          pkg-config
-          openssl
-          (rust-bin.stable.latest.default.override {
-            extensions = [
-              "rust-src"
-              "rust-analyzer"
-            ];
-          })
-          cargo-watch
+      pnpm = pkgs.pnpm;
+
+      rust = pkgs.rust-bin.stable.latest.default.override {
+        extensions = [
+          "rust-src"
+          "rust-analyzer"
         ];
       };
+    in {
+      devShells.default = with pkgs;
+        mkShell {
+          packages = [
+            nodejs
+            pnpm
+            pkg-config
+            openssl
+            just
+            mprocs
+            rust
+          ];
+
+          shellHook = ''
+            export PKG_CONFIG_PATH="${pkgs.openssl.dev}/lib/pkgconfig";
+            export PRISMA_QUERY_ENGINE_BINARY="${prisma-engines}/bin/query-engine";
+            export PRISMA_SCHEMA_ENGINE_BINARY="${prisma-engines}/bin/schema-engine";
+            export PRISMA_FMT_BINARY="${prisma-engines}/bin/prisma-fmt"
+            export PRISMA_QUERY_ENGINE_LIBRARY="${prisma-engines}/lib/libquery_engine.node"
+            export PATH="$PWD/node_modules/.bin/:$PATH"
+          '';
+        };
     });
-  };
 }
