@@ -12,7 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
-import { Route as AppAboutRouteImport } from './routes/_app/about'
+import { Route as AppListIdRouteImport } from './routes/_app/$listId'
 
 const LoginRoute = LoginRouteImport.update({
   id: '/login',
@@ -28,35 +28,35 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
-const AppAboutRoute = AppAboutRouteImport.update({
-  id: '/about',
-  path: '/about',
+const AppListIdRoute = AppListIdRouteImport.update({
+  id: '/$listId',
+  path: '/$listId',
   getParentRoute: () => AppRoute,
 } as any)
 
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
-  '/about': typeof AppAboutRoute
+  '/$listId': typeof AppListIdRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
-  '/about': typeof AppAboutRoute
+  '/$listId': typeof AppListIdRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
-  '/_app/about': typeof AppAboutRoute
+  '/_app/$listId': typeof AppListIdRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/login' | '/about' | '/'
+  fullPaths: '/login' | '/$listId' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/about' | '/'
-  id: '__root__' | '/_app' | '/login' | '/_app/about' | '/_app/'
+  to: '/login' | '/$listId' | '/'
+  id: '__root__' | '/_app' | '/login' | '/_app/$listId' | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -87,23 +87,23 @@ declare module '@tanstack/solid-router' {
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
     }
-    '/_app/about': {
-      id: '/_app/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AppAboutRouteImport
+    '/_app/$listId': {
+      id: '/_app/$listId'
+      path: '/$listId'
+      fullPath: '/$listId'
+      preLoaderRoute: typeof AppListIdRouteImport
       parentRoute: typeof AppRoute
     }
   }
 }
 
 interface AppRouteChildren {
-  AppAboutRoute: typeof AppAboutRoute
+  AppListIdRoute: typeof AppListIdRoute
   AppIndexRoute: typeof AppIndexRoute
 }
 
 const AppRouteChildren: AppRouteChildren = {
-  AppAboutRoute: AppAboutRoute,
+  AppListIdRoute: AppListIdRoute,
   AppIndexRoute: AppIndexRoute,
 }
 

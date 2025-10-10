@@ -1,31 +1,54 @@
 /// <reference types="vite/client" />
 
-import { createRootRoute, Outlet } from "@tanstack/solid-router";
 import { ColorModeProvider, ColorModeScript, cookieStorageManagerSSR } from "@kobalte/core";
+import { TanStackDevtools } from "@tanstack/solid-devtools";
+import { QueryClientProvider } from "@tanstack/solid-query";
+import { SolidQueryDevtoolsPanel } from "@tanstack/solid-query-devtools";
+import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/solid-router";
+import { TanStackRouterDevtoolsPanel } from "@tanstack/solid-router-devtools";
 import appCss from "~/app.css?url";
-import { SidebarInset, SidebarProvider } from "~/components/ui/sidebar";
-import { AppSidebar } from "~/components/ui/sidebar/app-sidebar";
-import { Skeleton } from "~/components/ui/skeleton";
 import { Cookies } from "~/lib/cookies";
-import { SiteHeader } from "~/components/ui/sidebar/header";
-import { cn } from "~/lib/utils";
+import { fetchUser } from "~/lib/user";
+import type { RouterContext } from "~/router";
 
-export const Route = createRootRoute({
+export const Route = createRootRouteWithContext<RouterContext>()({
     head: () => ({
         links: [{ rel: "stylesheet", href: appCss }],
     }),
+    beforeLoad: async () => {
+        const user = await fetchUser();
+        return { user };
+    },
     shellComponent: RootDocument,
 });
 
 function RootDocument() {
+    const context = Route.useRouteContext();
     const storageManager = cookieStorageManagerSSR(Cookies.getRaw());
 
     return (
-        <>
+        <QueryClientProvider client={context().queryClient}>
+            <HeadContent />
+
             <ColorModeScript storageType={storageManager.type} />
             <ColorModeProvider storageManager={storageManager}>
                 <Outlet />
             </ColorModeProvider>
-        </>
+
+            <TanStackDevtools
+                plugins={[
+                    {
+                        name: "TanStack Query",
+                        render: <SolidQueryDevtoolsPanel />,
+                    },
+                    {
+                        name: "TanStack Router",
+                        render: <TanStackRouterDevtoolsPanel />,
+                    },
+                ]}
+            />
+
+            <Scripts />
+        </QueryClientProvider>
     );
 }

@@ -1,3 +1,4 @@
+import { Link } from "@tanstack/solid-router";
 import {
     Sidebar,
     SidebarContent,
@@ -8,7 +9,6 @@ import {
     SidebarMenuItem,
 } from "~/components/ui/sidebar";
 import { NavUser } from "./user-nav";
-import { Link } from "@tanstack/solid-router";
 
 const data = {
     user: {

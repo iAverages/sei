@@ -1,6 +1,6 @@
 import { createIsomorphicFn } from "@tanstack/solid-start";
 import { getRequestHeader, setCookie as setServerCookie } from "@tanstack/solid-start/server";
-import serverCookie from "cookie"; // used for parsing cookie on the server
+import serverCookie, { type SerializeOptions } from "cookie"; // used for parsing cookie on the server
 import clientCookie from "js-cookie"; // used for setting cookie on the client
 
 export const Cookies = {
@@ -21,11 +21,25 @@ export const Cookies = {
         }),
 
     set: createIsomorphicFn()
-        .server((name: string, value: string) => {
-            return setServerCookie(name, value);
+        .server((name: string, value: string, attrs?: SerializeOptions) => {
+            return setServerCookie(name, value, attrs);
         })
-        .client((name: string, value: string) => {
-            return clientCookie.set(name, value);
+        .client((name: string, value: string, attrs?: SerializeOptions) => {
+            return clientCookie.set(
+                name,
+                value,
+                attrs
+                    ? {
+                          ...attrs,
+                          sameSite:
+                              typeof attrs.sameSite === "boolean"
+                                  ? attrs.sameSite
+                                      ? "strict"
+                                      : "none"
+                                  : attrs.sameSite,
+                      }
+                    : undefined,
+            );
         }),
 
     getRaw: createIsomorphicFn()

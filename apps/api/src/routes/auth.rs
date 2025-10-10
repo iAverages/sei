@@ -142,6 +142,8 @@ pub async fn handle_mal_callback(
         }
     }
 
-    let html = Html::from("<html><script>window.close()</script></html>");
-    (updated_jar, html)
+    (updated_jar, Redirect::temporary("/"))
+
+    // let html = Html::from("<html><script>window.close()</script></html>");
+    // (updated_jar, html)
 }
