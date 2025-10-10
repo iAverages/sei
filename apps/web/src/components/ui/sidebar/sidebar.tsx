@@ -9,6 +9,7 @@ import {
     SidebarMenuItem,
 } from "~/components/ui/sidebar";
 import { NavUser } from "./user-nav";
+import { User } from "~/lib/user";
 
 const data = {
     user: {
@@ -40,7 +41,7 @@ const data = {
     ],
 };
 
-export function AppSidebar() {
+export function AppSidebar(props: { user: User }) {
     return (
         <Sidebar collapsible="offcanvas" variant="inset">
             <SidebarHeader>
@@ -57,7 +58,7 @@ export function AppSidebar() {
             </SidebarHeader>
             <SidebarContent>{/* <NavMain items={data.navMain} /> */}</SidebarContent>
             <SidebarFooter>
-                <NavUser user={data.user} />
+                <NavUser user={props.user} />
             </SidebarFooter>
         </Sidebar>
     );

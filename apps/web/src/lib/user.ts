@@ -18,3 +18,5 @@ export const fetchUser = async () => {
     if (validator.success) return validator.data;
     return null;
 };
+
+export type User = z.infer<typeof userSchema>;

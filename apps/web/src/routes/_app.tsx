@@ -28,9 +28,12 @@ export const Route = createFileRoute("/_app")({
         }
 
         handleGoToRedirect();
+
+        return { user };
     },
-    loader: () => {
+    loader: ({ context: { user } }) => {
         return {
+            user,
             crumb: "List",
             data: [
                 { id: "default", name: "Default" },
@@ -43,6 +46,7 @@ export const Route = createFileRoute("/_app")({
 function RouteComponent() {
     // TODO: can we speed this up, it takes a second to actually show the buttons
     const [headerButtonsArea, setHeaderButtonsArea] = createSignal<HeaderButtonsArea>(null);
+    const data = Route.useLoaderData();
 
     return (
         <HeaderButtonsProvider buttonsAreaRef={headerButtonsArea} setButtonsAreaRef={setHeaderButtonsArea}>
@@ -52,7 +56,7 @@ function RouteComponent() {
                     "--header-height": "calc(var(--spacing) * 12)",
                 }}
             >
-                <AppSidebar />
+                <AppSidebar user={data().user} />
                 <SidebarInset>
                     <Header setButtonsAreaRef={setHeaderButtonsArea} />
                     <div class="flex flex-1 flex-col">
