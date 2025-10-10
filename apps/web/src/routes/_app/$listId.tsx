@@ -106,6 +106,7 @@ const ResetButton = (props: { hasReordered: Accessor<boolean>; reset: () => void
     const [open, setOpen] = createSignal(false);
     const handleAccept = async () => {
         props.reset();
+        setOpen(false);
     };
 
     const handleDeny = () => {
