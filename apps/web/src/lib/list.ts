@@ -67,6 +67,4 @@ export const updateListOrder = async (ids: number[]) => {
         });
         throw new Error("failed save list, recieved non 200 status code");
     }
-
-    return response.json();
 };

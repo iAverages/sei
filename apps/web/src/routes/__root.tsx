@@ -7,6 +7,7 @@ import { SolidQueryDevtoolsPanel } from "@tanstack/solid-query-devtools";
 import { createRootRouteWithContext, HeadContent, Outlet, Scripts } from "@tanstack/solid-router";
 import { TanStackRouterDevtoolsPanel } from "@tanstack/solid-router-devtools";
 import appCss from "~/app.css?url";
+import { Toaster } from "~/components/ui/sonner";
 import { Cookies } from "~/lib/cookies";
 import { fetchUser } from "~/lib/user";
 import type { RouterContext } from "~/router";
@@ -33,6 +34,7 @@ function RootDocument() {
             <ColorModeScript storageType={storageManager.type} />
             <ColorModeProvider storageManager={storageManager}>
                 <Outlet />
+                <Toaster />
             </ColorModeProvider>
 
             <TanStackDevtools

@@ -1,6 +1,6 @@
-import { useMutation } from "@tanstack/solid-query";
 import { makeEventListener } from "@solid-primitives/event-listener";
-import { createFileRoute } from "@tanstack/solid-router";
+import { useMutation } from "@tanstack/solid-query";
+import { createFileRoute, useRouter, useRouterState } from "@tanstack/solid-router";
 import {
     closestCenter,
     DragDropProvider,
@@ -12,6 +12,7 @@ import {
 } from "@thisbeyond/solid-dnd";
 import { type Accessor, createSignal, For, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
+import { toast } from "solid-sonner";
 import { AnimeCard, DraggableAnimeCard } from "~/components/anime-card";
 import {
     AlertDialog,
@@ -24,9 +25,7 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { HeaderButtonsPortal } from "~/components/ui/sidebar/buttons-portal";
-import { api } from "~/lib/fetch";
 import { fetchList, updateListOrder } from "~/lib/list";
-import { trytm } from "~/lib/utils";
 
 export const Route = createFileRoute("/_app/$listId")({
     component: RouteComponent,
@@ -41,11 +40,12 @@ export const Route = createFileRoute("/_app/$listId")({
 
 function RouteComponent() {
     const data = Route.useLoaderData();
+    const [initalAnime, setInitalAnime] = createStore([...data().anime]);
     const [animes, setAnime] = createStore([...data().anime]);
     const animeIds = () => animes.map((an) => an.id);
 
     const hasReordered = () => {
-        return !animes.every((animeA, index) => data().anime[index].id === animeA.id);
+        return !animes.every((animeA, index) => initalAnime[index].id === animeA.id);
     };
 
     const onDragEnd: DragEventHandler = (event) => {
@@ -69,7 +69,11 @@ function RouteComponent() {
 
     const updateListOrderMutation = useMutation(() => ({
         mutationKey: ["list", "update"],
-        mutationFn: updateListOrder,
+        mutationFn: async (ids: number[]) => {
+            await updateListOrder(ids);
+            setInitalAnime(ids.map((id) => animes.find((a) => a.id === id)!));
+            toast("List order saved successfully");
+        },
     }));
 
     return (
@@ -83,7 +87,7 @@ function RouteComponent() {
                     >
                         Save List Order
                     </Button>
-                    <ResetButton hasReordered={hasReordered} reset={() => setAnime([...data().anime])} />
+                    <ResetButton hasReordered={hasReordered} reset={() => setAnime([...initalAnime])} />
                 </div>
             </HeaderButtonsPortal>
             <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
@@ -95,7 +99,7 @@ function RouteComponent() {
                     </div>
                 </SortableProvider>
                 <DragOverlay class={"transition-transform"}>
-                    {(draggable) => <AnimeCard anime={data().anime.find((a) => a.id === draggable?.id)!} />}
+                    {(draggable) => <AnimeCard anime={animes.find((a) => a.id === draggable?.id)!} />}
                 </DragOverlay>
             </DragDropProvider>
         </fieldset>
