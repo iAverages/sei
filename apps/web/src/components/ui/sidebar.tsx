@@ -26,6 +26,7 @@ import { Sheet, SheetContent } from "~/components/ui/sheet";
 import { Skeleton } from "~/components/ui/skeleton";
 import { TextField, TextFieldInput } from "~/components/ui/text-field";
 import { Tooltip, TooltipContent, TooltipTrigger } from "~/components/ui/tooltip";
+import { useCookie } from "~/lib/cookies";
 
 const MOBILE_BREAKPOINT = 768;
 const SIDEBAR_COOKIE_NAME = "sidebar:state";
@@ -79,6 +80,16 @@ type SidebarProviderProps = Omit<ComponentProps<"div">, "style"> & {
     style?: JSX.CSSProperties;
 };
 
+const useSidebarOpenState = (defaultOpen: boolean) => {
+    const [cookie, _setCookie] = useCookie("sidebar-open-state", defaultOpen ? "true" : "false");
+    const setCookie = (value: boolean | ((value: boolean) => boolean)) => {
+        const newValue = typeof value === "boolean" ? value : value(cookie() === "true");
+        _setCookie(newValue ? "true" : "false");
+    };
+
+    return [() => cookie() === "true", setCookie] as const;
+};
+
 const SidebarProvider: Component<SidebarProviderProps> = (rawProps) => {
     const props = mergeProps({ defaultOpen: true }, rawProps);
     const [local, others] = splitProps(props, ["defaultOpen", "open", "onOpenChange", "class", "style", "children"]);
@@ -86,19 +97,7 @@ const SidebarProvider: Component<SidebarProviderProps> = (rawProps) => {
     const isMobile = useIsMobile();
     const [openMobile, setOpenMobile] = createSignal(false);
 
-    // This is the internal state of the sidebar.
-    // We use open and onOpenChange for control from outside the component.
-    const [_open, _setOpen] = createSignal(local.defaultOpen);
-    const open = () => local.open ?? _open();
-    const setOpen = (value: boolean | ((value: boolean) => boolean)) => {
-        if (local.onOpenChange) {
-            return local.onOpenChange?.(typeof value === "function" ? value(open()) : value);
-        }
-        _setOpen(value);
-
-        // This sets the cookie to keep the sidebar state.
-        document.cookie = `${SIDEBAR_COOKIE_NAME}=${open()}; path=/; max-age=${SIDEBAR_COOKIE_MAX_AGE}`;
-    };
+    const [open, setOpen] = useSidebarOpenState(local.defaultOpen);
 
     // Helper to toggle the sidebar.
     const toggleSidebar = () => {
