@@ -1,6 +1,7 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useMutation } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
+import { Motion, Presence } from "solid-motionone";
 import {
     closestCenter,
     DragDropProvider,
@@ -85,34 +86,39 @@ function RouteComponent() {
     return (
         <fieldset disabled={updateListOrderMutation.isPending || updateAnimeStatus.isPending}>
             <HeaderButtonsPortal>
-                <div class="flex gap-2">
-                    <Button disabled={!hasReordered()} onClick={() => updateListOrderMutation.mutate(animeIds())}>
-                        Save List Order
-                    </Button>
-                    <ResetButton hasReordered={hasReordered} reset={() => setAnime([...initalAnime])} />
-                </div>
-            </HeaderButtonsPortal>
-            <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
-                <ScrollDragFix />
-                <DragDropSensors />
-                <SortableProvider ids={animeIds()}>
-                    <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 gap-3">
-                        <For each={animes}>
-                            {(anime, index) => (
-                                <DraggableAnimeCard
-                                    index={index()}
-                                    anime={anime}
-                                    bringToFront={() => setAnime(moveIndexToStart(animes, index()))}
-                                    setStatus={(status) => updateAnimeStatus.mutate({ animeId: anime.id, status })}
-                                />
-                            )}
-                        </For>
+                <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
+                    <div class="flex gap-2">
+                        <Button disabled={!hasReordered()} onClick={() => updateListOrderMutation.mutate(animeIds())}>
+                            Save List Order
+                        </Button>
+                        <ResetButton hasReordered={hasReordered} reset={() => setAnime([...initalAnime])} />
                     </div>
-                </SortableProvider>
-                <DragOverlay class={"transition-transform"}>
-                    {(draggable) => <AnimeCard anime={animes.find((a) => a.id === draggable?.id)!} />}
-                </DragOverlay>
-            </DragDropProvider>
+                </Motion.div>
+            </HeaderButtonsPortal>
+
+            <Motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+                <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
+                    <ScrollDragFix />
+                    <DragDropSensors />
+                    <SortableProvider ids={animeIds()}>
+                        <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 gap-3">
+                            <For each={animes}>
+                                {(anime, index) => (
+                                    <DraggableAnimeCard
+                                        index={index()}
+                                        anime={anime}
+                                        bringToFront={() => setAnime(moveIndexToStart(animes, index()))}
+                                        setStatus={(status) => updateAnimeStatus.mutate({ animeId: anime.id, status })}
+                                    />
+                                )}
+                            </For>
+                        </div>
+                    </SortableProvider>
+                    <DragOverlay class={"transition-transform"}>
+                        {(draggable) => <AnimeCard anime={animes.find((a) => a.id === draggable?.id)!} />}
+                    </DragOverlay>
+                </DragDropProvider>
+            </Motion.div>
         </fieldset>
     );
 }
