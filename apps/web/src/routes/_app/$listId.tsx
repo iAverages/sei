@@ -1,6 +1,6 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useMutation } from "@tanstack/solid-query";
-import { createFileRoute, useRouter, useRouterState } from "@tanstack/solid-router";
+import { createFileRoute } from "@tanstack/solid-router";
 import {
     closestCenter,
     DragDropProvider,
@@ -25,7 +25,8 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { HeaderButtonsPortal } from "~/components/ui/sidebar/buttons-portal";
-import { fetchList, updateListOrder } from "~/lib/list";
+import { type AnimeListStatus, fetchList, updateListOrder } from "~/lib/list";
+import { moveIndexToStart } from "~/lib/utils";
 
 export const Route = createFileRoute("/_app/$listId")({
     component: RouteComponent,
@@ -76,15 +77,16 @@ function RouteComponent() {
         },
     }));
 
+    const updateAnimeStatus = useMutation(() => ({
+        mutationKey: ["anime", "status", "update"],
+        mutationFn: async ({ animeId, status }: { animeId: number; status: AnimeListStatus }) => {},
+    }));
+
     return (
-        <fieldset disabled={updateListOrderMutation.isPending}>
+        <fieldset disabled={updateListOrderMutation.isPending || updateAnimeStatus.isPending}>
             <HeaderButtonsPortal>
                 <div class="flex gap-2">
-                    <Button
-                        class=""
-                        disabled={!hasReordered()}
-                        onClick={() => updateListOrderMutation.mutate(animeIds())}
-                    >
+                    <Button disabled={!hasReordered()} onClick={() => updateListOrderMutation.mutate(animeIds())}>
                         Save List Order
                     </Button>
                     <ResetButton hasReordered={hasReordered} reset={() => setAnime([...initalAnime])} />
@@ -95,7 +97,16 @@ function RouteComponent() {
                 <DragDropSensors />
                 <SortableProvider ids={animeIds()}>
                     <div class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 gap-3">
-                        <For each={animes}>{(anime) => <DraggableAnimeCard anime={anime} />}</For>
+                        <For each={animes}>
+                            {(anime, index) => (
+                                <DraggableAnimeCard
+                                    index={index()}
+                                    anime={anime}
+                                    bringToFront={() => setAnime(moveIndexToStart(animes, index()))}
+                                    setStatus={(status) => updateAnimeStatus.mutate({ animeId: anime.id, status })}
+                                />
+                            )}
+                        </For>
                     </div>
                 </SortableProvider>
                 <DragOverlay class={"transition-transform"}>

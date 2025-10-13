@@ -1,5 +1,16 @@
 import { createSortable, useDragDropContext } from "@thisbeyond/solid-dnd";
-import type { Anime } from "~/lib/list";
+import { type Anime, AnimeListStatus } from "~/lib/list";
+import {
+    ContextMenu,
+    ContextMenuContent,
+    ContextMenuItem,
+    ContextMenuPortal,
+    ContextMenuSeparator,
+    ContextMenuSub,
+    ContextMenuSubContent,
+    ContextMenuSubTrigger,
+    ContextMenuTrigger,
+} from "./ui/context-menu";
 
 export const AnimeCard = (props: { anime: Anime }) => {
     return (
@@ -25,7 +36,13 @@ export const AnimeCard = (props: { anime: Anime }) => {
     );
 };
 
-export const DraggableAnimeCard = (props: { anime: Anime; disabled?: boolean }) => {
+export const DraggableAnimeCard = (props: {
+    anime: Anime;
+    disabled?: boolean;
+    bringToFront: () => void;
+    index: number;
+    setStatus: (status: AnimeListStatus) => void;
+}) => {
     const sortable = createSortable(props.anime.id);
     const [state] = useDragDropContext()!;
 
@@ -38,7 +55,48 @@ export const DraggableAnimeCard = (props: { anime: Anime; disabled?: boolean }) 
                 "transition-transform": !!state.active.draggable,
             }}
         >
-            <AnimeCard anime={props.anime} />
+            <ContextMenu>
+                <ContextMenuTrigger>
+                    <AnimeCard anime={props.anime} />
+                </ContextMenuTrigger>
+                <ContextMenuContent>
+                    <ContextMenuItem class="cursor-pointer" onClick={props.bringToFront} disabled={props.index === 0}>
+                        Bring to Front
+                    </ContextMenuItem>
+                    <ContextMenuItem
+                        as="a"
+                        href={`http://myanimelist.net/anime/${props.anime.id}`}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        class="cursor-pointer"
+                    >
+                        View on MAL
+                    </ContextMenuItem>
+                    <ContextMenuSeparator />
+                    <ContextMenuSub overlap>
+                        <ContextMenuSubTrigger>MAL Status</ContextMenuSubTrigger>
+                        <ContextMenuPortal>
+                            <ContextMenuSubContent>
+                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.Watching)}>
+                                    Watching
+                                </ContextMenuItem>
+                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.Complete)}>
+                                    Complete
+                                </ContextMenuItem>
+                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.OnHold)}>
+                                    On-Hold
+                                </ContextMenuItem>
+                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.Dropped)}>
+                                    Dropped
+                                </ContextMenuItem>
+                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.PlanToWatch)}>
+                                    Plan to Watch
+                                </ContextMenuItem>
+                            </ContextMenuSubContent>
+                        </ContextMenuPortal>
+                    </ContextMenuSub>
+                </ContextMenuContent>
+            </ContextMenu>
         </div>
     );
 };

@@ -32,7 +32,7 @@ export const fetchList = async () => {
     const validator = listSchema.safeParse(json);
     if (!validator.success) throw validator.error;
 
-    const orderedAnime = []; // Array.from({ length: validator.data.list_entries.length }, () => 0);
+    const orderedAnime = [];
 
     for (const anime of validator.data.animes) {
         const listStatus = validator.data.list_entries.find((status) => status.anime_id === anime.id);
@@ -41,7 +41,6 @@ export const fetchList = async () => {
             continue;
         }
 
-        console.log({ anime: anime.id, listStatus });
         if (listStatus.watch_priority === 0) orderedAnime.push(anime);
         else orderedAnime[listStatus.watch_priority] = anime;
     }
@@ -68,3 +67,12 @@ export const updateListOrder = async (ids: number[]) => {
         throw new Error("failed save list, recieved non 200 status code");
     }
 };
+
+export const AnimeListStatus = {
+    Watching: "Watching",
+    Complete: "Complete",
+    OnHold: "OnHold",
+    Dropped: "Dropped",
+    PlanToWatch: "PlanToWatch",
+} as const;
+export type AnimeListStatus = keyof typeof AnimeListStatus;
