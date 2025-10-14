@@ -6,11 +6,9 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::helpers::json_response;
-use crate::importer::{AnimeUserEntry, AnimeWatchStatus};
-use crate::mal::get_mal_user_list;
-use crate::models::anime::get_released_animes_by_id;
+use crate::models::anime::{get_anime_relations, get_released_animes_by_id};
 use crate::models::anime_users::{
-    get_user_entrys, link_user_to_anime, update_watch_priority, DBAnimeUser, WatchPriorityUpdate,
+    get_animes_for_user, get_user_list_entries, update_watch_priority, WatchPriorityUpdate,
 };
 use crate::models::user::{DBUser, SafeUser};
 use crate::AppState;
@@ -43,55 +41,54 @@ pub async fn get_list(
         let user = user.clone();
         let user_id = user.id.clone();
         let state = state.clone();
-        tokio::spawn(async move {
-            let mal_user_list = get_mal_user_list(state.reqwest, user).await;
-
-            match mal_user_list {
-                Ok(mal) => {
-                    let ids = mal
-                        .data
-                        .iter()
-                        .map(|item| AnimeUserEntry {
-                            status: item
-                                .list_status
-                                .status
-                                .parse::<AnimeWatchStatus>()
-                                .map_err(|_| AnimeWatchStatus::Watching)
-                                .expect("Failed to parse watch status"),
-                            user_id: user_id.clone(),
-                            anime_id: item.node.id,
-                        })
-                        .collect::<Vec<_>>();
-                    let mut importer = state.importer.lock().await;
-                    importer.add_all(ids);
-                }
-                Err(err) => {
-                    // TODO: Handle better?
-                    tracing::error!("{:?}", err)
-                }
-            }
-        });
+        // TODO: add to queue again
+        // TODO: handle animes deleted from list
+        // tokio::spawn(async move {
+        // let mal_user_list = get_mal_user_list(state.reqwest, user).await;
+        //
+        // match mal_user_list {
+        //     Ok(mal) => {
+        //         let ids = mal
+        //             .data
+        //             .iter()
+        //             .map(|item| AnimeUserEntry {
+        //                 status: item
+        //                     .list_status
+        //                     .status
+        //                     .parse::<AnimeWatchStatus>()
+        //                     .map_err(|_| AnimeWatchStatus::Watching)
+        //                     .expect("Failed to parse watch status"),
+        //                 user_id: user_id.clone(),
+        //                 anime_id: item.node.id,
+        //             })
+        //             .collect::<Vec<_>>();
+        //         // let mut importer = state.importer.lock().await;
+        //         // importer.add_all(ids);
+        //     }
+        //     Err(err) => {
+        //         // TODO: Handle better?
+        //         tracing::error!("{:?}", err)
+        //     }
+        // }
+        // });
     }
 
-    // TODO: handle unwrap
-    let entries = get_user_entrys(&state.db, user_id).await.unwrap();
-
-    let anime_ids: Vec<i32> = entries.iter().map(|entry| entry.anime_id).collect();
-    let animes = get_released_animes_by_id(&state.db, anime_ids)
+    // TODO: handle errors correctly
+    let anime_ids = get_animes_for_user(&state.db, user_id.as_str())
         .await
         .unwrap();
-    let entries = entries
-        .iter()
-        .map(|entry| SingleEntry {
-            anime_id: entry.anime_id as u32,
-            watch_priority: entry.watch_priority as u32,
-            watch_status: entry.status.clone().into(),
-        })
-        .collect::<Vec<_>>();
+    let animes = get_released_animes_by_id(&state.db, &anime_ids)
+        .await
+        .unwrap();
+    let list_entries = get_user_list_entries(&state.db, user_id.as_str())
+        .await
+        .unwrap();
+    let anime_relations = get_anime_relations(&state.db, &anime_ids).await.unwrap();
 
     json_response!(StatusCode::OK, {
         "animes": animes,
-        "list_entries": entries
+        "list_entries": list_entries,
+        "relations": anime_relations,
     })
 }
 

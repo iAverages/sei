@@ -6,6 +6,7 @@ export const listSchema = z.object({
     animes: z.array(
         z.object({
             created_at: z.string(),
+            english_title: z.string().nullable(),
             id: z.number(),
             picture: z.string(),
             romaji_title: z.string(),
@@ -18,11 +19,37 @@ export const listSchema = z.object({
     list_entries: z.array(
         z.object({
             anime_id: z.number(),
+            created_at: z.string(),
+            status: z.string(),
+            updated_at: z.string(),
+            user_id: z.string(),
             watch_priority: z.number(),
-            watch_status: z.string(),
         }),
     ),
+    relations: z.array(z.object({ anime_id: z.number(), relation_id: z.number() })),
 });
+
+const buildSeriesMap = (animeId: number, relations: z.infer<typeof listSchema>["relations"], map: number[]) => {
+    let updatedMap = [...map];
+    for (const rel of relations) {
+        console.log({ rel });
+        if (map.includes(rel.anime_id)) continue;
+        if (rel.relation_id === animeId) {
+            updatedMap = buildSeriesMap(rel.anime_id, relations, [rel.anime_id, ...map]);
+            console.log("updated", updatedMap);
+        }
+    }
+
+    for (const rel of relations) {
+        if (map.includes(rel.relation_id)) continue;
+        if (rel.anime_id === animeId)
+            updatedMap = buildSeriesMap(rel.relation_id, relations, [...updatedMap, rel.relation_id]);
+    }
+
+    console.log({ animeId, updatedMap });
+
+    return updatedMap;
+};
 
 export const fetchList = async () => {
     const data = await api("/api/v1/user/list");
@@ -33,6 +60,7 @@ export const fetchList = async () => {
     if (!validator.success) throw validator.error;
 
     const orderedAnime = [];
+    const seriesMap = [];
 
     for (const anime of validator.data.animes) {
         const listStatus = validator.data.list_entries.find((status) => status.anime_id === anime.id);
@@ -43,12 +71,18 @@ export const fetchList = async () => {
 
         if (listStatus.watch_priority === 0) orderedAnime.push(anime);
         else orderedAnime[listStatus.watch_priority] = anime;
+
+        seriesMap.push(buildSeriesMap(anime.id, validator.data.relations, [anime.id]));
     }
 
-    return orderedAnime.filter((i) => !!i);
+    return {
+        anime: orderedAnime.filter((i) => !!i),
+        seriesMap,
+        // related: relatedAnime,
+    };
 };
 
-export type Anime = Awaited<ReturnType<typeof fetchList>>[number];
+export type Anime = Awaited<ReturnType<typeof fetchList>>["anime"][number];
 
 export const updateListOrder = async (ids: number[]) => {
     const response = await api("/api/v1/user/list", {

@@ -3,14 +3,14 @@ use serde::Serialize;
 use sqlx::prelude::FromRow;
 use sqlx::{MySql, Pool, QueryBuilder};
 
-use crate::anilist::api_types::{CoverImage, Title};
+use crate::anilist::api_types::{AnimeCoverImage, AnimeTitle};
 
 #[derive(Debug, Clone)]
 pub struct InsertAnime {
     pub status: String,
-    pub title: Title,
+    pub title: AnimeTitle,
     pub id_mal: u32,
-    pub cover_image: CoverImage,
+    pub cover_image: AnimeCoverImage,
     pub season: Option<String>,
     pub season_year: Option<u32>,
 }
@@ -61,7 +61,7 @@ pub struct DBAnime {
 
 pub async fn get_released_animes_by_id(
     db: &Pool<MySql>,
-    ids: Vec<i32>,
+    ids: &[i32],
 ) -> Result<Vec<DBAnime>, anyhow::Error> {
     if ids.is_empty() {
         return Ok(vec![]);
@@ -88,6 +88,46 @@ pub async fn get_released_animes_by_id(
     query_builder.push(")");
 
     let query = query_builder.build_query_as::<DBAnime>();
+
+    let animes = query.fetch_all(db).await?;
+
+    Ok(animes)
+}
+
+#[derive(Serialize, FromRow)]
+pub struct DBAnimeRelation {
+    anime_id: i32,
+    relation_id: i32,
+}
+
+pub async fn get_anime_relations(
+    db: &Pool<MySql>,
+    ids: &[i32],
+) -> Result<Vec<DBAnimeRelation>, anyhow::Error> {
+    if ids.is_empty() {
+        return Ok(vec![]);
+    }
+    let mut query_builder: QueryBuilder<MySql> = QueryBuilder::new(
+        r#"
+        SELECT
+            *
+        FROM
+            anime_relations
+        WHERE
+            anime_id IN ( 
+        "#,
+    );
+
+    for (i, id) in ids.iter().enumerate() {
+        query_builder.push_bind(id);
+        if i < ids.len() - 1 {
+            query_builder.push(", ");
+        }
+    }
+
+    query_builder.push(")");
+
+    let query = query_builder.build_query_as::<DBAnimeRelation>();
 
     let animes = query.fetch_all(db).await?;
 

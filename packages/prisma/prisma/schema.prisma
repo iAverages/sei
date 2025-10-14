@@ -18,8 +18,9 @@ model users {
     deleted_at        DateTime?
     list_last_update  DateTime  @default(now())
 
-    sessions    sessions[]
-    anime_users anime_users[]
+    sessions        sessions[]
+    anime_users     anime_users[]
+    anime_job_queue anime_job_queue[]
 }
 
 enum Status {
@@ -39,12 +40,12 @@ enum AiringStatus {
 }
 
 model animes {
-    id            Int          @unique
+    id            Int           @unique
     english_title String?
-    romaji_title  String
-    status        AiringStatus
+    romaji_title  String?
+    status        AiringStatus?
 
-    picture    String
+    picture    String?
     created_at DateTime @default(now())
     updated_at DateTime @default(now())
 
@@ -126,4 +127,22 @@ model sessions {
     user users @relation(fields: [user_id], references: [id], onDelete: Cascade, onUpdate: Cascade)
 
     @@index([user_id], name: "user_id")
+}
+
+enum anime_job_queue_status {
+    Pending
+    InProgress
+    Failed
+    Complete
+}
+
+model anime_job_queue {
+    id          String                 @id
+    anime_id    Int
+    status      anime_job_queue_status
+    created_at  DateTime               @default(now())
+    complete_at DateTime?
+
+    triggered_by_id String?
+    triggered_by    users?  @relation(fields: [triggered_by_id], references: [id])
 }

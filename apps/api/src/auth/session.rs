@@ -7,8 +7,6 @@ use time;
 
 use crate::AppState;
 
-use crate::models::user::SafeUser;
-
 #[derive(sqlx::FromRow, Serialize, Deserialize)]
 pub struct Session {
     pub id: String,

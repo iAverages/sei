@@ -15,7 +15,6 @@ use serde::Deserialize;
 
 use crate::{
     auth::session::create_session,
-    importer::{AnimeUserEntry, AnimeWatchStatus},
     models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser},
 };
 use crate::{mal::get_mal_user_list, AppState};
@@ -117,30 +116,31 @@ pub async fn handle_mal_callback(
     let reqwest = state.reqwest.clone();
     let mal_user_list = get_mal_user_list(reqwest, user).await;
 
-    match mal_user_list {
-        Ok(mal) => {
-            let ids = mal
-                .data
-                .iter()
-                .map(|item| AnimeUserEntry {
-                    status: item
-                        .list_status
-                        .status
-                        .parse::<AnimeWatchStatus>()
-                        .map_err(|_| AnimeWatchStatus::Watching)
-                        .expect("Failed to parse watch status"),
-                    user_id: user_id.clone(),
-                    anime_id: item.node.id,
-                })
-                .collect::<Vec<_>>();
-            let mut importer = state.importer.lock().await;
-            importer.add_all(ids);
-        }
-        Err(err) => {
-            // TODO: Handle better?
-            tracing::error!("{:?}", err)
-        }
-    }
+    // TODO: import again
+    // match mal_user_list {
+    //     Ok(mal) => {
+    //         let ids = mal
+    //             .data
+    //             .iter()
+    //             .map(|item| AnimeUserEntry {
+    //                 status: item
+    //                     .list_status
+    //                     .status
+    //                     .parse::<AnimeWatchStatus>()
+    //                     .map_err(|_| AnimeWatchStatus::Watching)
+    //                     .expect("Failed to parse watch status"),
+    //                 user_id: user_id.clone(),
+    //                 anime_id: item.node.id,
+    //             })
+    //             .collect::<Vec<_>>();
+    //         let mut importer = state.importer.lock().await;
+    //         importer.add_all(ids);
+    //     }
+    //     Err(err) => {
+    //         // TODO: Handle better?
+    //         tracing::error!("{:?}", err)
+    //     }
+    // }
 
     (updated_jar, Redirect::temporary("/"))
 

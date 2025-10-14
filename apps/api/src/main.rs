@@ -1,6 +1,7 @@
 mod anilist;
 mod auth;
 mod consts;
+mod database;
 mod helpers;
 mod importer;
 mod mal;
@@ -10,12 +11,10 @@ mod routes;
 use std::{
     fmt::{self, Display, Formatter},
     net::SocketAddr,
-    sync::Arc,
-    time::Duration,
 };
 
 use axum::{
-    extract::{FromRef, State},
+    extract::FromRef,
     http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
@@ -28,51 +27,17 @@ use helpers::json_response;
 use reqwest::Client;
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
-use tokio::{sync::Mutex, time};
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
 use crate::{auth::oauth::create_oauth_client, importer::Importer, middleware::auth_guard::guard};
-
-#[axum::debug_handler]
-async fn debug_route(State(state): State<AppState>) -> impl IntoResponse {
-    let importer = state.importer.lock().await;
-    json_response!(StatusCode::OK, {
-        "queue": importer.stats()
-    })
-}
-
-#[axum::debug_handler]
-async fn test_handler(State(state): State<AppState>) -> impl IntoResponse {
-    let mut importer = state.importer.lock().await;
-    importer.add_anime_only(2025);
-    // importer.add_anime_only(36098);
-    // importer.add_anime_only(59226);
-    // importer.add_anime_only(59027);
-
-    json_response!(StatusCode::OK, {
-        "queue": importer.stats()
-    })
-}
 
 #[derive(Clone)]
 pub struct AppState {
     key: Key,
     db: sqlx::Pool<sqlx::MySql>,
     reqwest: Client,
-    importer: Arc<Mutex<Importer>>,
-}
-
-impl FromRef<AppState> for sqlx::Pool<sqlx::MySql> {
-    fn from_ref(state: &AppState) -> Self {
-        state.db.clone()
-    }
-}
-
-impl FromRef<AppState> for Client {
-    fn from_ref(state: &AppState) -> Self {
-        state.reqwest.clone()
-    }
+    importer: Importer,
 }
 
 impl FromRef<AppState> for Key {
@@ -88,17 +53,18 @@ async fn main() {
 
     tracing::info!("Starting server...");
 
+    // TODO: improve env validation handling
+    let api_url = std::env::var("API_URL").unwrap_or("http://localhost:3000".to_string());
+    let mal_client_id = std::env::var("MAL_CLIENT_ID").expect("MAL_CLIENT_ID not set");
+    let mal_client_secret = std::env::var("MAL_CLIENT_SECRET").expect("MAL_CLIENT_SECRET not set");
+
     let cors = CorsLayer::new()
         .allow_methods([Method::GET, Method::POST])
         .allow_credentials(true)
         .allow_headers(AllowHeaders::mirror_request())
-        .allow_origin(AllowOrigin::exact(HeaderValue::from_static(
-            "http://localhost:3000",
-        )));
-
-    let api_url = std::env::var("API_URL").unwrap_or("http://localhost:3000".to_string());
-    let mal_client_id = std::env::var("MAL_CLIENT_ID").expect("MAL_CLIENT_ID not set");
-    let mal_client_secret = std::env::var("MAL_CLIENT_SECRET").expect("MAL_CLIENT_SECRET not set");
+        .allow_origin(AllowOrigin::exact(
+            HeaderValue::from_str(api_url.as_str()).unwrap(),
+        ));
 
     let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
     let db_pool = MySqlPoolOptions::new()
@@ -108,7 +74,7 @@ async fn main() {
         .expect("Failed to connect to database");
 
     let reqwest = Client::new();
-    let importer = Arc::new(Mutex::new(Importer::new(reqwest.clone(), db_pool.clone())));
+    let mut importer = Importer::new(reqwest.clone(), db_pool.clone());
 
     let state = AppState {
         key: Key::generate(),
@@ -117,40 +83,19 @@ async fn main() {
         importer: importer.clone(),
     };
 
-    tokio::spawn(async move {
-        let mut interval = time::interval(Duration::from_millis(2000));
+    importer.start();
 
-        loop {
-            interval.tick().await;
-            let mut importer_ref = importer.lock().await;
-            importer_ref.process().await;
-        }
-    });
-
-    let oauth_client =
-        create_oauth_client(api_url.clone(), mal_client_id.clone(), mal_client_secret);
+    let oauth_client = create_oauth_client(api_url, mal_client_id.clone(), mal_client_secret);
 
     let app = Router::new()
         .nest_service("/", ServeDir::new("public"))
         .nest(
             "/api/v1",
             Router::new()
-                .route("/test", get(test_handler))
-                .route("/debug", get(debug_route))
                 .route("/auth/me", get(routes::user::get_user))
                 .route("/user/list", get(routes::user::get_list))
                 .route("/user/list", post(routes::user::update_list_order))
-                // .route("/order", post(routes::anime::update_list_order))
                 .route_layer(from_fn_with_state(state.clone(), guard))
-                // .route("/anime/:id", get(routes::anime::get_anime))
-                // .route(
-                //     "/anime/:id/relations",
-                //     get(routes::anime::get_anime_relations),
-                // )
-                // .route(
-                //     "/anime/:id/import",
-                //     get(routes::anime::get_anime_force_import),
-                // )
                 .with_state(state.clone()),
         )
         .route(
@@ -172,6 +117,8 @@ async fn main() {
         .await
         .unwrap();
 }
+
+// TODO: use this better for returning friendly errors to api response
 
 // Make our own error that wraps `anyhow::Error`.
 pub struct AppError(anyhow::Error);

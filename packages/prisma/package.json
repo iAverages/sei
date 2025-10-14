@@ -4,7 +4,7 @@
     "main": "index.js",
     "license": "MIT",
     "scripts": {
-        "db": "yarn with-env prisma",
+        "prisma": "prisma",
         "with-env": "dotenv -e ../../.env"
     },
     "dependencies": {

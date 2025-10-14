@@ -1,7 +1,6 @@
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useMutation } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
-import { Motion, Presence } from "solid-motionone";
 import {
     closestCenter,
     DragDropProvider,
@@ -13,8 +12,10 @@ import {
 } from "@thisbeyond/solid-dnd";
 import { type Accessor, createSignal, For, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
+import { Motion } from "solid-motionone";
 import { toast } from "solid-sonner";
 import { AnimeCard, DraggableAnimeCard } from "~/components/anime-card";
+import { BackToTop } from "~/components/back-to-top";
 import {
     AlertDialog,
     AlertDialogContent,
@@ -31,8 +32,9 @@ import { moveIndexToStart } from "~/lib/utils";
 
 export const Route = createFileRoute("/_app/$listId")({
     component: RouteComponent,
+    ssr: false,
     loader: async () => {
-        const anime = await fetchList();
+        const { anime } = await fetchList();
         return {
             crumb: "Default",
             anime,
@@ -85,6 +87,7 @@ function RouteComponent() {
 
     return (
         <fieldset disabled={updateListOrderMutation.isPending || updateAnimeStatus.isPending}>
+            <BackToTop />
             <HeaderButtonsPortal>
                 <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
                     <div class="flex gap-2">
