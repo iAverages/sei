@@ -35,6 +35,9 @@ export function getRouter() {
         defaultNotFoundComponent: () => <p>not found</p>,
         scrollRestoration: true,
         context: createRouterContext(),
+        defaultOnCatch(error) {
+            console.error("uncaught error", error.message, error.stack);
+        },
     });
 
     return router;

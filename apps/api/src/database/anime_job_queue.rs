@@ -102,6 +102,6 @@ pub enum AnimeJobQueue {
 pub struct DBAnimeJobQueue {
     pub id: String,
     pub anime_id: i32,
-    pub status: AnimeJobQueueStatus,
+    pub status: String,
     pub triggered_by_id: Option<String>,
 }

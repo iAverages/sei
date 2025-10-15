@@ -6,6 +6,7 @@ use serde::Serialize;
 use serde_json::json;
 
 use crate::helpers::json_response;
+use crate::mal::get_mal_user_list;
 use crate::models::anime::{get_anime_relations, get_released_animes_by_id};
 use crate::models::anime_users::{
     get_animes_for_user, get_user_list_entries, update_watch_priority, WatchPriorityUpdate,
@@ -41,36 +42,26 @@ pub async fn get_list(
         let user = user.clone();
         let user_id = user.id.clone();
         let state = state.clone();
-        // TODO: add to queue again
         // TODO: handle animes deleted from list
-        // tokio::spawn(async move {
-        // let mal_user_list = get_mal_user_list(state.reqwest, user).await;
-        //
-        // match mal_user_list {
-        //     Ok(mal) => {
-        //         let ids = mal
-        //             .data
-        //             .iter()
-        //             .map(|item| AnimeUserEntry {
-        //                 status: item
-        //                     .list_status
-        //                     .status
-        //                     .parse::<AnimeWatchStatus>()
-        //                     .map_err(|_| AnimeWatchStatus::Watching)
-        //                     .expect("Failed to parse watch status"),
-        //                 user_id: user_id.clone(),
-        //                 anime_id: item.node.id,
-        //             })
-        //             .collect::<Vec<_>>();
-        //         // let mut importer = state.importer.lock().await;
-        //         // importer.add_all(ids);
-        //     }
-        //     Err(err) => {
-        //         // TODO: Handle better?
-        //         tracing::error!("{:?}", err)
-        //     }
-        // }
-        // });
+        tokio::spawn(async move {
+            let response = get_mal_user_list(state.reqwest, user).await;
+            if let Err(error) = response {
+                tracing::error!(
+                    error = error.to_string(),
+                    "failed to fetch mal list for user"
+                );
+                return;
+            }
+
+            let animes = response.unwrap();
+            let _ = state
+                .importer
+                .add_items(
+                    animes.data.into_iter().map(|anime| anime.node.id).collect(),
+                    Some(user_id.clone()),
+                )
+                .await;
+        });
     }
 
     // TODO: handle errors correctly

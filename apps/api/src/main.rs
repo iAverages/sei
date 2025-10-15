@@ -14,7 +14,7 @@ use std::{
 };
 
 use axum::{
-    extract::FromRef,
+    extract::{FromRef, State},
     http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
@@ -44,6 +44,12 @@ impl FromRef<AppState> for Key {
     fn from_ref(state: &AppState) -> Self {
         state.key.clone()
     }
+}
+
+#[axum::debug_handler]
+async fn test(State(state): State<AppState>) -> impl IntoResponse {
+    let _ = state.importer.add_items(vec![2025], None).await;
+    (StatusCode::OK, "hi")
 }
 
 #[tokio::main]
@@ -92,6 +98,7 @@ async fn main() {
         .nest(
             "/api/v1",
             Router::new()
+                .route("/test", get(test))
                 .route("/auth/me", get(routes::user::get_user))
                 .route("/user/list", get(routes::user::get_list))
                 .route("/user/list", post(routes::user::update_list_order))

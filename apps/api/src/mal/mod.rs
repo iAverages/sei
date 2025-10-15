@@ -19,7 +19,7 @@ pub struct AnimeBroadcast {
 
 #[derive(Deserialize, Serialize, Clone)]
 pub struct AnimeListNode {
-    pub id: u32,
+    pub id: i32,
     pub title: String,
     pub main_picture: AnimePicture,
     pub status: String,

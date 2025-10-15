@@ -10,12 +10,33 @@ pub struct AnilistFetchAnimeResponse {
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
+pub struct AnilistFetchAnimeErrorResponse {
+    pub errors: Vec<AnilistError>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnilistError {
+    pub message: String,
+    pub status: i64,
+    pub locations: Vec<AnilistErrorLocation>,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
+pub struct AnilistErrorLocation {
+    pub line: i64,
+    pub column: i64,
+}
+
+#[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct AnilistApiAnime {
     pub status: String,
     pub id_mal: i64,
     pub title: AnimeTitle,
-    pub season: String,
-    pub season_year: i64,
+    pub season: Option<String>,
+    pub season_year: Option<i64>,
     pub cover_image: AnimeCoverImage,
     pub relations: AnimeRelations,
 }
@@ -48,5 +69,5 @@ pub struct AnimeRelationEdge {
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnimeRelationEdgeNode {
-    pub id_mal: i64,
+    pub id_mal: Option<i64>,
 }

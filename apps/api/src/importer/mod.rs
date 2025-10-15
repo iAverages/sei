@@ -1,8 +1,11 @@
 use std::sync::Arc;
 use std::time::Duration;
+use std::vec;
 
 use chrono::Utc;
+use cuid::cuid2;
 use reqwest::Client;
+use sea_query::Condition;
 use sea_query::Expr;
 use sea_query::ExprTrait;
 use sea_query::OnConflict;
@@ -14,6 +17,7 @@ use sea_query::{MysqlQueryBuilder, Query};
 use sea_query_sqlx::SqlxBinder;
 
 use crate::anilist::api_types::AnilistApiAnime;
+use crate::anilist::gql_query::MAX_ANILIST_PER_QUERY;
 use crate::anilist::Anilist;
 use crate::consts::MYSQL_PARAM_BIND_LIMIT;
 use crate::database::anime_job_queue::AnimeJobQueue;
@@ -41,9 +45,9 @@ pub struct Importer {
 }
 
 impl Importer {
-    pub fn new(reqwest: Client, db: Pool<MySql>) -> Self {
+    pub fn new(_: Client, db: Pool<MySql>) -> Self {
         Importer {
-            inner: Arc::new(ImporterInner::new(reqwest, db)),
+            inner: Arc::new(ImporterInner::new(db)),
         }
     }
 
@@ -67,15 +71,37 @@ impl Importer {
 
     // TODO: should we requeue if the status is error but is within last 6 hours?
     async fn valid_to_queue(&self, items: &[i32]) -> Vec<(i32, bool)> {
-        let six_hours_ago = Utc::now() - chrono::Duration::hours(6);
+        let mut query = Query::select();
+        query
+            .from(AnimeJobQueue::Table)
+            .columns([
+                AnimeJobQueue::Id,
+                AnimeJobQueue::AnimeId,
+                AnimeJobQueue::Status,
+                AnimeJobQueue::TriggeredById,
+            ])
+            .cond_where(
+                Condition::all()
+                    .add(
+                        Condition::any()
+                            .add(Expr::col(AnimeJobQueue::Status).is_in([
+                                AnimeJobQueueStatus::Pending,
+                                AnimeJobQueueStatus::InProgress,
+                            ]))
+                            .add(
+                                Expr::col(AnimeJobQueue::CompleteAt)
+                                    .gte(Expr::cust("NOW() - INTERVAL 6 HOUR")),
+                            ),
+                    )
+                    .add(Expr::col(AnimeJobQueue::AnimeId).is_in(items.to_vec())),
+            )
+            .group_by_col(AnimeJobQueue::AnimeId);
 
-        let result = sqlx::query_file_as!(
-            DBAnimeJobQueue,
-            "database/queries/get_queue_items.sql",
-            six_hours_ago
-        )
-        .fetch_all(&self.inner.db)
-        .await;
+        let (sql, values) = query.build_sqlx(MysqlQueryBuilder);
+
+        let result: Result<Vec<DBAnimeJobQueue>, _> = sqlx::query_as_with(&sql, values)
+            .fetch_all(&self.inner.db)
+            .await;
 
         if let Err(error) = result {
             tracing::error!(
@@ -90,6 +116,9 @@ impl Importer {
         let mut should_queue = Vec::new();
         for id in items {
             let updated_recently = recently_updated.iter().find(|item| item.anime_id == *id);
+            if updated_recently.is_none() {
+                tracing::trace!(id = id, "going to requeue item");
+            }
             should_queue.push((*id, updated_recently.is_none()));
         }
 
@@ -108,18 +137,37 @@ impl Importer {
             .filter(|(_, should_queue)| *should_queue)
             .map(|(id, _)| id)
             .collect::<Vec<i32>>();
+        tracing::info!(
+            amount = ids_to_queue.len(),
+            skipped = items.len() - ids_to_queue.len(),
+            "adding items to queue"
+        );
+
+        if ids_to_queue.is_empty() {
+            tracing::info!("no provided items should be added to the queue");
+            return Ok(());
+        }
 
         let mut query = Query::insert();
         query.into_table(AnimeJobQueue::Table);
 
-        let mut columns = vec![AnimeJobQueue::Id, AnimeJobQueue::Status];
+        let mut columns = vec![
+            AnimeJobQueue::Id,
+            AnimeJobQueue::AnimeId,
+            AnimeJobQueue::Status,
+        ];
         if triggered_by_id.is_some() {
             columns.push(AnimeJobQueue::TriggeredById);
         }
         query.columns(columns);
 
-        query.values_from_panic(ids_to_queue.into_iter().map(|id| {
-            let mut values = vec![id.into(), AnimeJobQueueStatus::Pending.into()];
+        query.values_from_panic(ids_to_queue.into_iter().map(|anime_id| {
+            let id = cuid2();
+            let mut values = vec![
+                id.into(),
+                anime_id.into(),
+                AnimeJobQueueStatus::Pending.into(),
+            ];
             if let Some(triggered_by_id_val) = &triggered_by_id {
                 values.push(triggered_by_id_val.clone().into());
             }
@@ -131,6 +179,9 @@ impl Importer {
         sqlx::query_with(&sql, values)
             .execute(&self.inner.db)
             .await
+            .inspect_err(|error| {
+                tracing::error!(error = error.to_string(), "failed to add items to queue");
+            })
             .map_err(|_| ImporterError::AddToQueue)?;
 
         Ok(())
@@ -139,12 +190,12 @@ impl Importer {
 
 struct ImporterInner {
     db: Pool<MySql>,
-    anilist: Anilist,
+    anilist: Arc<Anilist>,
 }
 
 impl ImporterInner {
     pub fn new(db: Pool<MySql>) -> Self {
-        let anilist = Anilist::new();
+        let anilist = Arc::new(Anilist::new());
         ImporterInner { db, anilist }
     }
 
@@ -158,8 +209,8 @@ impl ImporterInner {
             let mut query = Query::update();
 
             let mut values = vec![(AnimeJobQueue::Status, status.clone().into())];
-            // if job is complete, set completed at to the current time
-            if status == AnimeJobQueueStatus::Complete {
+            // if job is complete or failed, set completed at to the current time
+            if status == AnimeJobQueueStatus::Complete || status == AnimeJobQueueStatus::Failed {
                 values.push((AnimeJobQueue::CompleteAt, Utc::now().into()));
             }
 
@@ -284,7 +335,7 @@ impl ImporterInner {
     }
 
     async fn process(&self) {
-        let items = self.fetch_next(10).await;
+        let items = self.fetch_next(MAX_ANILIST_PER_QUERY as u32).await;
         if items.is_empty() {
             tracing::trace!("no jobs to process");
             return;
@@ -297,7 +348,7 @@ impl ImporterInner {
 
         tracing::info!(jobs_amount = items.len(), "found jobs to process");
 
-        let response = self.anilist.fetch_animes(&anime_ids).await;
+        let response = self.anilist.clone().fetch_animes(&anime_ids, true).await;
 
         if let Err(error) = response {
             tracing::error!(error = error.to_string(), "failed to process queue");

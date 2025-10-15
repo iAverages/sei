@@ -5,15 +5,13 @@ import { trytm } from "./utils";
 export const listSchema = z.object({
     animes: z.array(
         z.object({
-            created_at: z.string(),
-            english_title: z.string().nullable(),
+            english_title: z.string().nullish(),
             id: z.number(),
             picture: z.string(),
             romaji_title: z.string(),
-            season: z.string().nullable(),
-            season_year: z.number().nullable(),
+            season: z.string().nullish(),
+            season_year: z.number().nullish(),
             status: z.string(),
-            updated_at: z.string(),
         }),
     ),
     list_entries: z.array(
