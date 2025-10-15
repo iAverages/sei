@@ -2,6 +2,8 @@ use std::collections::HashMap;
 
 use serde::{Deserialize, Serialize};
 
+use crate::models::anime::FullAnime;
+
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]
 #[serde(rename_all = "camelCase")]
 pub struct AnilistFetchAnimeResponse {
@@ -39,6 +41,18 @@ pub struct AnilistApiAnime {
     pub season_year: Option<i64>,
     pub cover_image: AnimeCoverImage,
     pub relations: AnimeRelations,
+}
+impl From<AnilistApiAnime> for FullAnime {
+    fn from(val: AnilistApiAnime) -> Self {
+        Self {
+            id: val.id_mal as i32,
+            status: val.status,
+            picture: Some(val.cover_image.large),
+            romaji_title: val.title.romaji,
+            season: val.season,
+            season_year: val.season_year.map(|value| value as i32),
+        }
+    }
 }
 
 #[derive(Default, Debug, Clone, PartialEq, Serialize, Deserialize)]

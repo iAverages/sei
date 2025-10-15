@@ -25,12 +25,23 @@ use axum_extra::extract::cookie::Key;
 use dotenvy::dotenv;
 use helpers::json_response;
 use reqwest::Client;
+use serde::{Deserialize, Serialize};
 use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
+use tokio::sync::broadcast;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
 use tower_http::services::ServeDir;
 
 use crate::{auth::oauth::create_oauth_client, importer::Importer, middleware::auth_guard::guard};
+
+use self::models::anime::FullAnime;
+
+#[derive(Clone, Debug, Serialize, Deserialize)]
+struct ImportEvent {
+    user_id: String,
+    anime: FullAnime,
+    list_id: String, // TODO: not used yet
+}
 
 #[derive(Clone)]
 pub struct AppState {
@@ -38,6 +49,7 @@ pub struct AppState {
     db: sqlx::Pool<sqlx::MySql>,
     reqwest: Client,
     importer: Importer,
+    tx: broadcast::Sender<ImportEvent>,
 }
 
 impl FromRef<AppState> for Key {
@@ -79,14 +91,16 @@ async fn main() {
         .await
         .expect("Failed to connect to database");
 
+    let (tx, _rx) = broadcast::channel(256);
     let reqwest = Client::new();
-    let mut importer = Importer::new(reqwest.clone(), db_pool.clone());
+    let mut importer = Importer::new(reqwest.clone(), db_pool.clone(), tx.clone());
 
     let state = AppState {
         key: Key::generate(),
         db: db_pool,
         reqwest,
         importer: importer.clone(),
+        tx,
     };
 
     importer.start();
@@ -102,6 +116,7 @@ async fn main() {
                 .route("/auth/me", get(routes::user::get_user))
                 .route("/user/list", get(routes::user::get_list))
                 .route("/user/list", post(routes::user::update_list_order))
+                .route("/user/list/sse", get(routes::user::join_sse))
                 .route_layer(from_fn_with_state(state.clone(), guard))
                 .with_state(state.clone()),
         )

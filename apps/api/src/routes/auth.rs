@@ -1,6 +1,6 @@
 use axum::{
     extract::{Query, State},
-    response::{Html, IntoResponse, Redirect},
+    response::{IntoResponse, Redirect},
     Extension,
 };
 use axum_extra::extract::{
@@ -13,11 +13,13 @@ use oauth2::{
 };
 use serde::Deserialize;
 
+use crate::AppState;
 use crate::{
     auth::session::create_session,
-    models::user::{create_user, find_user_mal_id, get_mal_user, CreateUser},
+    models::user::{
+        create_user, find_user_mal_id, get_mal_user, update_list_entries_mal, CreateUser,
+    },
 };
-use crate::{mal::get_mal_user_list, AppState};
 
 #[derive(Deserialize)]
 pub struct MalRedirectQuery {
@@ -113,37 +115,11 @@ pub async fn handle_mal_callback(
         .unwrap();
     let updated_jar = jar.add(cookie);
 
-    let reqwest = state.reqwest.clone();
-    let mal_user_list = get_mal_user_list(reqwest, user).await;
-
-    // TODO: import again
-    // match mal_user_list {
-    //     Ok(mal) => {
-    //         let ids = mal
-    //             .data
-    //             .iter()
-    //             .map(|item| AnimeUserEntry {
-    //                 status: item
-    //                     .list_status
-    //                     .status
-    //                     .parse::<AnimeWatchStatus>()
-    //                     .map_err(|_| AnimeWatchStatus::Watching)
-    //                     .expect("Failed to parse watch status"),
-    //                 user_id: user_id.clone(),
-    //                 anime_id: item.node.id,
-    //             })
-    //             .collect::<Vec<_>>();
-    //         let mut importer = state.importer.lock().await;
-    //         importer.add_all(ids);
-    //     }
-    //     Err(err) => {
-    //         // TODO: Handle better?
-    //         tracing::error!("{:?}", err)
-    //     }
-    // }
+    let _ = update_list_entries_mal(state, user).await;
 
     (updated_jar, Redirect::temporary("/"))
 
+    // TODO: setup auto in popup again
     // let html = Html::from("<html><script>window.close()</script></html>");
     // (updated_jar, html)
 }

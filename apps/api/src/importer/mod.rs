@@ -11,6 +11,7 @@ use sea_query::ExprTrait;
 use sea_query::OnConflict;
 use sqlx::{MySql, Pool};
 use thiserror::Error;
+use tokio::sync::broadcast;
 use tokio::time;
 
 use sea_query::{MysqlQueryBuilder, Query};
@@ -24,6 +25,8 @@ use crate::database::anime_job_queue::AnimeJobQueue;
 use crate::database::anime_job_queue::AnimeJobQueueStatus;
 use crate::database::anime_job_queue::DBAnimeJobQueue;
 use crate::database::models::Animes;
+use crate::models::anime::FullAnime;
+use crate::ImportEvent;
 
 pub struct ImporterStats {
     in_queue: i32,
@@ -45,9 +48,9 @@ pub struct Importer {
 }
 
 impl Importer {
-    pub fn new(_: Client, db: Pool<MySql>) -> Self {
+    pub fn new(_: Client, db: Pool<MySql>, tx: broadcast::Sender<ImportEvent>) -> Self {
         Importer {
-            inner: Arc::new(ImporterInner::new(db)),
+            inner: Arc::new(ImporterInner::new(db, tx)),
         }
     }
 
@@ -125,10 +128,29 @@ impl Importer {
         should_queue
     }
 
+    async fn add_empty_anime(&self, ids: &[i32]) -> Result<(), anyhow::Error> {
+        let (sql, values) = Query::insert()
+            .into_table(Animes::Table)
+            .columns([Animes::Id])
+            .values_from_panic(ids.iter().map(|id| [(*id).into()]))
+            .on_conflict(OnConflict::column(Animes::Id).do_nothing().to_owned())
+            .build_sqlx(MysqlQueryBuilder);
+
+        sqlx::query_with(&sql, values)
+            .execute(&self.inner.db)
+            .await
+            .inspect_err(|error| {
+                tracing::error!(error = error.to_string(), "failed to add items to queue");
+            })
+            .map_err(|_| ImporterError::AddToQueue)?;
+
+        Ok(())
+    }
+
     pub async fn add_items(
         &self,
         items: Vec<i32>,
-        triggered_by_id: Option<String>,
+        triggered_by_id: Option<&str>,
     ) -> Result<(), ImporterError> {
         let ids_to_queue = self
             .valid_to_queue(&items)
@@ -147,6 +169,9 @@ impl Importer {
             tracing::info!("no provided items should be added to the queue");
             return Ok(());
         }
+
+        // TODO: handle error
+        let _ = self.add_empty_anime(&ids_to_queue).await;
 
         let mut query = Query::insert();
         query.into_table(AnimeJobQueue::Table);
@@ -168,8 +193,8 @@ impl Importer {
                 anime_id.into(),
                 AnimeJobQueueStatus::Pending.into(),
             ];
-            if let Some(triggered_by_id_val) = &triggered_by_id {
-                values.push(triggered_by_id_val.clone().into());
+            if let Some(triggered_by_id_val) = triggered_by_id {
+                values.push(triggered_by_id_val.into());
             }
             values
         }));
@@ -191,12 +216,13 @@ impl Importer {
 struct ImporterInner {
     db: Pool<MySql>,
     anilist: Arc<Anilist>,
+    tx: broadcast::Sender<ImportEvent>,
 }
 
 impl ImporterInner {
-    pub fn new(db: Pool<MySql>) -> Self {
+    pub fn new(db: Pool<MySql>, tx: broadcast::Sender<ImportEvent>) -> Self {
         let anilist = Arc::new(Anilist::new());
-        ImporterInner { db, anilist }
+        ImporterInner { db, anilist, tx }
     }
 
     async fn update_item_status(
@@ -286,7 +312,10 @@ impl ImporterInner {
         vec![]
     }
 
-    async fn set_anime_data(&self, anime_data: Vec<AnilistApiAnime>) -> Result<(), ImporterError> {
+    async fn set_anime_data(
+        &self,
+        anime_data: Vec<(AnilistApiAnime, Option<String>)>,
+    ) -> Result<(), ImporterError> {
         tracing::info!(total = anime_data.len(), "settings data for animes");
         let columns = [
             Animes::Id,
@@ -301,7 +330,7 @@ impl ImporterInner {
             let mut query = Query::insert();
             query.into_table(Animes::Table).columns(columns.clone());
 
-            for anime in chunk {
+            for (anime, _) in chunk {
                 query.values_panic([
                     anime.id_mal.into(),
                     anime.status.clone().into(),
@@ -329,6 +358,22 @@ impl ImporterInner {
                 .execute(&self.db)
                 .await
                 .map_err(|_| ImporterError::StoreData)?;
+
+            chunk.iter().for_each(|(anime, triggered_by_id)| {
+                let Some(triggered_by_id) = triggered_by_id else {
+                    return;
+                };
+                let res = self.tx.send(ImportEvent {
+                    user_id: triggered_by_id.clone(),
+                    anime: anime.clone().into(),
+                    list_id: "default".to_string(),
+                });
+
+                tracing::info!(anime = anime.id_mal, "send event over sse");
+                if let Err(error) = res {
+                    tracing::error!("error while sending sse event: {}", error);
+                }
+            });
         }
 
         Ok(())
@@ -359,8 +404,21 @@ impl ImporterInner {
         }
 
         let anime_data = response.unwrap();
-        let _ = self.set_anime_data(anime_data).await;
 
+        let anime_data_with_trigged_by = anime_data
+            .into_iter()
+            .map(|anime| {
+                let event = items
+                    .iter()
+                    .find(|event| event.anime_id == anime.id_mal as i32);
+                let triggered_by_id = match event {
+                    Some(event) => event.triggered_by_id.clone(),
+                    None => None,
+                };
+                (anime, triggered_by_id)
+            })
+            .collect::<Vec<_>>();
+        let _ = self.set_anime_data(anime_data_with_trigged_by).await;
         let _ = self
             .update_item_status(&job_ids, AnimeJobQueueStatus::Complete)
             .await;

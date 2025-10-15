@@ -57,20 +57,23 @@ pub async fn get_mal_user_list(
     reqwest: Client,
     user: DBUser,
 ) -> Result<MalAnimeListResponse, anyhow::Error> {
-    tracing::info!("Getting MAL anime list for user {}", user.id);
+    tracing::info!(user_id = user.id, "getting mal anime list for user");
     let res = reqwest
         .get("https://api.myanimelist.net/v2/users/@me/animelist?fields=list_status,node.status,node.num_episodes,node.broadcast&limit=1000&nsfw=1")
         .bearer_auth(user.mal_access_token)
         .send()
-        .await
-        .expect("Failed to get MAL anime");
+        .await?;
 
     let text = res.text().await?;
     let anime: MalAnimeListResponse = serde_json::from_str(&text)
         .with_context(|| format!("Unable to deserialise response. Body was: \"{}\"", text))?;
     let paging = anime.paging.clone();
 
-    tracing::info!("Got {} anime from MAL", anime.data.len());
+    tracing::info!(
+        user_id = user.id,
+        amount = anime.data.len(),
+        "got anime list from mal"
+    );
 
     Ok(MalAnimeListResponse {
         data: anime.data,

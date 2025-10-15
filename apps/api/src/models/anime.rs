@@ -1,12 +1,12 @@
 use sea_query::{Expr, ExprTrait, MysqlQueryBuilder, Query};
 use sea_query_sqlx::SqlxBinder;
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use sqlx::prelude::FromRow;
 use sqlx::{MySql, Pool, QueryBuilder};
 
 use crate::database::models::Animes;
 
-#[derive(FromRow, Serialize)]
+#[derive(FromRow, Serialize, Clone, Debug, Deserialize)]
 pub struct FullAnime {
     pub id: i32,
     pub romaji_title: String,

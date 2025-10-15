@@ -25,16 +25,15 @@ export const listSchema = z.object({
         }),
     ),
     relations: z.array(z.object({ anime_id: z.number(), relation_id: z.number() })),
+    isImporting: z.boolean(),
 });
 
 const buildSeriesMap = (animeId: number, relations: z.infer<typeof listSchema>["relations"], map: number[]) => {
     let updatedMap = [...map];
     for (const rel of relations) {
-        console.log({ rel });
         if (map.includes(rel.anime_id)) continue;
         if (rel.relation_id === animeId) {
             updatedMap = buildSeriesMap(rel.anime_id, relations, [rel.anime_id, ...map]);
-            console.log("updated", updatedMap);
         }
     }
 
@@ -43,8 +42,6 @@ const buildSeriesMap = (animeId: number, relations: z.infer<typeof listSchema>["
         if (rel.anime_id === animeId)
             updatedMap = buildSeriesMap(rel.relation_id, relations, [...updatedMap, rel.relation_id]);
     }
-
-    console.log({ animeId, updatedMap });
 
     return updatedMap;
 };
@@ -63,7 +60,7 @@ export const fetchList = async () => {
     for (const anime of validator.data.animes) {
         const listStatus = validator.data.list_entries.find((status) => status.anime_id === anime.id);
         if (!listStatus) {
-            console.warn("failed to find list status for anime", anime.id);
+            // console.warn("failed to find list status for anime", anime.id);
             continue;
         }
 
@@ -74,9 +71,9 @@ export const fetchList = async () => {
     }
 
     return {
+        isImporting: validator.data.isImporting,
         anime: orderedAnime.filter((i) => !!i),
         seriesMap,
-        // related: relatedAnime,
     };
 };
 

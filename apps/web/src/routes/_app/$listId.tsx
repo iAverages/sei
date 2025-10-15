@@ -10,12 +10,13 @@ import {
     SortableProvider,
     useDragDropContext,
 } from "@thisbeyond/solid-dnd";
-import { type Accessor, createSignal, For, onMount } from "solid-js";
+import { type Accessor, createEffect, createSignal, For, onMount, Show } from "solid-js";
 import { createStore } from "solid-js/store";
-import { Motion } from "solid-motionone";
+import { Motion, Presence } from "solid-motionone";
 import { toast } from "solid-sonner";
 import { AnimeCard, DraggableAnimeCard } from "~/components/anime-card";
 import { BackToTop } from "~/components/back-to-top";
+import { Alert, AlertTitle } from "~/components/ui/alert";
 import {
     AlertDialog,
     AlertDialogContent,
@@ -27,26 +28,45 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { HeaderButtonsPortal } from "~/components/ui/sidebar/buttons-portal";
-import { type AnimeListStatus, fetchList, updateListOrder } from "~/lib/list";
+import { Anime, type AnimeListStatus, fetchList, updateListOrder } from "~/lib/list";
+import { useSseStream } from "~/lib/sse";
 import { moveIndexToStart } from "~/lib/utils";
 
 export const Route = createFileRoute("/_app/$listId")({
     component: RouteComponent,
     ssr: false,
     loader: async () => {
-        const { anime } = await fetchList();
+        const { anime, isImporting } = await fetchList();
         return {
             crumb: "Default",
             anime,
+            isImporting,
         };
     },
 });
 
 function RouteComponent() {
     const data = Route.useLoaderData();
+    const [isImporting, setIsImporting] = createSignal(data().isImporting);
     const [initalAnime, setInitalAnime] = createStore([...data().anime]);
     const [animes, setAnime] = createStore([...data().anime]);
     const animeIds = () => animes.map((an) => an.id);
+
+    type ListSseEvent = {
+        anime: Anime;
+    };
+    useSseStream<ListSseEvent>({
+        url: "/api/v1/user/list/sse",
+        onMessage: ({ anime }) => {
+            const isInList = initalAnime.find((a) => a.id === anime.id);
+            if (isInList) {
+                console.log("anime already in list, skipping");
+                return;
+            }
+            setInitalAnime((prev) => [...prev, anime]);
+            setAnime((prev) => [...prev, anime]);
+        },
+    });
 
     const hasReordered = () => {
         return !animes.every((animeA, index) => initalAnime[index].id === animeA.id);
@@ -99,6 +119,23 @@ function RouteComponent() {
                 </Motion.div>
             </HeaderButtonsPortal>
 
+            <Presence>
+                <Show when={isImporting()}>
+                    <Motion.div
+                        initial={{ opacity: 0, height: "0px" }}
+                        animate={{ opacity: 1, height: "auto" }}
+                        exit={{ opacity: 0, height: "0px" }}
+                        transition={{ duration: 0.25 }}
+                    >
+                        <Alert variant={"destructive"}>
+                            <AlertTitle>
+                                Some animes in this list are still being importer. They should automatically appear once
+                                complete.
+                            </AlertTitle>
+                        </Alert>
+                    </Motion.div>
+                </Show>
+            </Presence>
             <Motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
                 <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
                     <ScrollDragFix />

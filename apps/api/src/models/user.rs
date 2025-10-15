@@ -1,7 +1,12 @@
-use chrono::NaiveDateTime;
+use chrono::{NaiveDateTime, Utc};
+use sea_query::{MysqlQueryBuilder, OnConflict, Query};
+use sea_query_sqlx::SqlxBinder;
 use serde::{Deserialize, Serialize};
+use sqlx::{MySql, Pool};
 
 use crate::auth::session::Session;
+use crate::database::models::AnimeUsers;
+use crate::mal::get_mal_user_list;
 use crate::AppState;
 
 pub async fn create_user(app_state: AppState, user: CreateUser) -> DBUser {
@@ -122,4 +127,100 @@ impl From<DBUser> for SafeUser {
             name: user.name,
         }
     }
+}
+
+pub async fn is_user_importing(db: &Pool<MySql>, user_id: &str) -> bool {
+    let result = sqlx::query_file!("database/queries/is_user_importing.sql", user_id)
+        .fetch_one(db)
+        .await;
+
+    match result {
+        Ok(res) => res.importing_count > 0,
+        Err(_) => false,
+    }
+}
+
+pub struct AnimeListEntry {
+    anime_id: i32,
+    status: String, // TODO: replace with enum for values
+    watch_priority: i32,
+}
+
+pub async fn add_to_list(db: &Pool<MySql>, user_id: &str, add_entries: Vec<AnimeListEntry>) {
+    let (sql, values) = Query::insert()
+        .into_table(AnimeUsers::Table)
+        .columns([
+            AnimeUsers::UserId,
+            AnimeUsers::AnimeId,
+            AnimeUsers::Status,
+            AnimeUsers::WatchPriority,
+            AnimeUsers::UpdatedAt,
+        ])
+        .values_from_panic(add_entries.iter().map(|entry| {
+            [
+                user_id.into(),
+                entry.anime_id.into(),
+                entry.status.clone().into(),
+                entry.watch_priority.into(),
+                Utc::now().into(),
+            ]
+        }))
+        .on_conflict(
+            OnConflict::columns([AnimeUsers::UserId, AnimeUsers::AnimeId])
+                .update_column(AnimeUsers::Status)
+                .update_column(AnimeUsers::WatchPriority)
+                .update_column(AnimeUsers::UpdatedAt)
+                .to_owned(),
+        )
+        .build_sqlx(MysqlQueryBuilder);
+
+    match sqlx::query_with(&sql, values).execute(db).await {
+        Ok(_) => {
+            tracing::info!("added animes to user list");
+            if cfg!(debug_assertions) {
+                add_entries.iter().for_each(|entry| {
+                    tracing::trace!(anime = entry.anime_id, "added anime to user list");
+                });
+            }
+        }
+        Err(_) => {
+            tracing::info!("added animes to user list");
+        }
+    };
+}
+
+pub async fn update_list_entries_mal(state: AppState, user: DBUser) {
+    let user_id = user.id.clone();
+    let response = get_mal_user_list(state.reqwest, user).await;
+    if let Err(error) = response {
+        tracing::error!(
+            error = error.to_string(),
+            "failed to fetch mal list for user"
+        );
+        return;
+    }
+
+    let animes = response.unwrap();
+    let _ = state
+        .importer
+        .add_items(
+            animes.data.iter().map(|anime| anime.node.id).collect(),
+            Some(&user_id),
+        )
+        .await;
+
+    add_to_list(
+        &state.db,
+        &user_id,
+        animes
+            .data
+            .into_iter()
+            .map(|anime| AnimeListEntry {
+                anime_id: anime.node.id,
+                status: anime.list_status.status,
+                watch_priority: 0,
+            })
+            .collect(),
+    )
+    .await;
 }
