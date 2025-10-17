@@ -1,12 +1,10 @@
-import { createEffect, createSignal, onCleanup } from "solid-js";
+import { createEffect, onCleanup } from "solid-js";
 
 export type UseSseStreamProps<T> = {
     url: string;
     onMessage?: (message: T) => void;
 };
 export const useSseStream = <T>({ url, onMessage }: UseSseStreamProps<T>) => {
-    const [data, setData] = createSignal<T[]>([]);
-
     createEffect(() => {
         const eventSource = new EventSource(url);
         eventSource.onopen = (event) => {
@@ -16,8 +14,9 @@ export const useSseStream = <T>({ url, onMessage }: UseSseStreamProps<T>) => {
             try {
                 const parsedData: T = JSON.parse(event.data);
                 // TODO: add validation
-                setData((prev) => [...prev, parsedData as T]);
+                // setTimeout(() => {
                 onMessage?.(parsedData as T);
+                // }, 1);
             } catch (error) {
                 console.error("Failed to parse SSE data:", error);
             }
@@ -30,6 +29,4 @@ export const useSseStream = <T>({ url, onMessage }: UseSseStreamProps<T>) => {
 
         onCleanup(() => eventSource.close());
     });
-
-    return { data };
 };

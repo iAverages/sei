@@ -133,14 +133,19 @@ impl Importer {
             .into_table(Animes::Table)
             .columns([Animes::Id])
             .values_from_panic(ids.iter().map(|id| [(*id).into()]))
-            .on_conflict(OnConflict::column(Animes::Id).do_nothing().to_owned())
+            .on_conflict(
+                OnConflict::column(Animes::Id)
+                    .do_nothing_on([Animes::Id])
+                    .to_owned(),
+            )
             .build_sqlx(MysqlQueryBuilder);
+        println!("{:?}", sql);
 
         sqlx::query_with(&sql, values)
             .execute(&self.inner.db)
             .await
             .inspect_err(|error| {
-                tracing::error!(error = error.to_string(), "failed to add items to queue");
+                tracing::error!(error = error.to_string(), "failed to add anime to database");
             })
             .map_err(|_| ImporterError::AddToQueue)?;
 
@@ -171,7 +176,10 @@ impl Importer {
         }
 
         // TODO: handle error
-        let _ = self.add_empty_anime(&ids_to_queue).await;
+        let res = self.add_empty_anime(&ids_to_queue).await;
+        if let Err(error) = res {
+            tracing::info!("failed to add empty anime to database: {}", error);
+        }
 
         let mut query = Query::insert();
         query.into_table(AnimeJobQueue::Table);
