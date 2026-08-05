@@ -58,7 +58,7 @@ function RouteComponent() {
         const checkImportStatus = async () => {
             try {
                 if (!(await fetchImportStatus())) {
-                    await router.invalidate();
+                    await router.invalidate({ sync: true });
                     setIsImporting(false);
                     return;
                 }
