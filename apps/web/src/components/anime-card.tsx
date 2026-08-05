@@ -1,15 +1,12 @@
 import { useDragOperation } from "@dnd-kit/solid";
 import { useSortable } from "@dnd-kit/solid/sortable";
-import { type Anime, AnimeListStatus } from "~/lib/list";
+import { Show } from "solid-js";
+import type { Anime } from "~/lib/list";
 import {
     ContextMenu,
     ContextMenuContent,
     ContextMenuItem,
-    ContextMenuPortal,
     ContextMenuSeparator,
-    ContextMenuSub,
-    ContextMenuSubContent,
-    ContextMenuSubTrigger,
     ContextMenuTrigger,
 } from "./ui/context-menu";
 
@@ -17,19 +14,30 @@ export const AnimeCard = (props: { anime: Anime }) => {
     return (
         <div class="rounded-md bg-sidebar-accent relative overflow-hidden flex-grow flex-shrink basis-auto">
             <div class="size-full">
-                <img
-                    src={props.anime.picture}
-                    alt={`${props.anime.romaji_title} banner`}
-                    class="size-full min-h-[317px] max-h-[317px] object-cover"
-                    draggable={false}
-                />
+                <Show
+                    when={props.anime.picture}
+                    fallback={
+                        <div class="flex min-h-[317px] items-center justify-center bg-muted px-4 text-center text-sm text-muted-foreground">
+                            Poster unavailable
+                        </div>
+                    }
+                >
+                    {(picture) => (
+                        <img
+                            src={picture()}
+                            alt={`${props.anime.romajiTitle} poster`}
+                            class="size-full min-h-[317px] max-h-[317px] object-cover"
+                            draggable={false}
+                        />
+                    )}
+                </Show>
             </div>
 
             <div class="absolute bottom-0 text-center font-semibold mt-auto w-full">
                 <div>
                     <div class="bg-gradient-to-t from-sidebar/60 to-transparent h-12 w-full" />
                     <div class="bg-sidebar/60 p-2 pt-0">
-                        <p>{props.anime.romaji_title}</p>
+                        <p>{props.anime.romajiTitle}</p>
                     </div>
                 </div>
             </div>
@@ -42,7 +50,7 @@ export const DraggableAnimeCard = (props: {
     disabled?: boolean;
     bringToFront: () => void;
     index: number;
-    setStatus: (status: AnimeListStatus) => void;
+    remove?: () => void;
 }) => {
     const sortable = useSortable({
         get id() {
@@ -83,29 +91,14 @@ export const DraggableAnimeCard = (props: {
                     >
                         View on MAL
                     </ContextMenuItem>
-                    <ContextMenuSeparator />
-                    <ContextMenuSub overlap>
-                        <ContextMenuSubTrigger>MAL Status</ContextMenuSubTrigger>
-                        <ContextMenuPortal>
-                            <ContextMenuSubContent>
-                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.Watching)}>
-                                    Watching
-                                </ContextMenuItem>
-                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.Complete)}>
-                                    Complete
-                                </ContextMenuItem>
-                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.OnHold)}>
-                                    On-Hold
-                                </ContextMenuItem>
-                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.Dropped)}>
-                                    Dropped
-                                </ContextMenuItem>
-                                <ContextMenuItem onSelect={() => props.setStatus(AnimeListStatus.PlanToWatch)}>
-                                    Plan to Watch
-                                </ContextMenuItem>
-                            </ContextMenuSubContent>
-                        </ContextMenuPortal>
-                    </ContextMenuSub>
+                    {props.remove && (
+                        <>
+                            <ContextMenuSeparator />
+                            <ContextMenuItem class="cursor-pointer text-destructive" onSelect={props.remove}>
+                                Remove from list
+                            </ContextMenuItem>
+                        </>
+                    )}
                 </ContextMenuContent>
             </ContextMenu>
         </div>

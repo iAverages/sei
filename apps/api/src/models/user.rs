@@ -165,7 +165,6 @@ pub async fn add_to_list(db: &Pool<MySql>, user_id: &str, add_entries: Vec<Anime
         .on_conflict(
             OnConflict::columns([AnimeUsers::UserId, AnimeUsers::AnimeId])
                 .update_column(AnimeUsers::Status)
-                .update_column(AnimeUsers::WatchPriority)
                 .update_column(AnimeUsers::UpdatedAt)
                 .to_owned(),
         )
@@ -220,4 +219,16 @@ pub async fn update_list_entries_mal(state: AppState, user: DBUser) {
             .collect(),
     )
     .await;
+
+    if let Err(error) =
+        sqlx::query("UPDATE users SET list_last_update = CURRENT_TIMESTAMP WHERE id = ?")
+            .bind(&user_id)
+            .execute(&state.db)
+            .await
+    {
+        tracing::error!(
+            error = error.to_string(),
+            "failed to update MAL list sync time"
+        );
+    }
 }

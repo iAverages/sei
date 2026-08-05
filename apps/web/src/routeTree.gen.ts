@@ -12,6 +12,7 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as LoginRouteImport } from './routes/login'
 import { Route as AppRouteImport } from './routes/_app'
 import { Route as AppIndexRouteImport } from './routes/_app/index'
+import { Route as ListsListIdRouteImport } from './routes/lists/$listId'
 import { Route as AppListIdRouteImport } from './routes/_app/$listId'
 
 const LoginRoute = LoginRouteImport.update({
@@ -28,6 +29,11 @@ const AppIndexRoute = AppIndexRouteImport.update({
   path: '/',
   getParentRoute: () => AppRoute,
 } as any)
+const ListsListIdRoute = ListsListIdRouteImport.update({
+  id: '/lists/$listId',
+  path: '/lists/$listId',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AppListIdRoute = AppListIdRouteImport.update({
   id: '/$listId',
   path: '/$listId',
@@ -37,11 +43,13 @@ const AppListIdRoute = AppListIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/login': typeof LoginRoute
   '/$listId': typeof AppListIdRoute
+  '/lists/$listId': typeof ListsListIdRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesByTo {
   '/login': typeof LoginRoute
   '/$listId': typeof AppListIdRoute
+  '/lists/$listId': typeof ListsListIdRoute
   '/': typeof AppIndexRoute
 }
 export interface FileRoutesById {
@@ -49,19 +57,27 @@ export interface FileRoutesById {
   '/_app': typeof AppRouteWithChildren
   '/login': typeof LoginRoute
   '/_app/$listId': typeof AppListIdRoute
+  '/lists/$listId': typeof ListsListIdRoute
   '/_app/': typeof AppIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/login' | '/$listId' | '/'
+  fullPaths: '/login' | '/$listId' | '/lists/$listId' | '/'
   fileRoutesByTo: FileRoutesByTo
-  to: '/login' | '/$listId' | '/'
-  id: '__root__' | '/_app' | '/login' | '/_app/$listId' | '/_app/'
+  to: '/login' | '/$listId' | '/lists/$listId' | '/'
+  id:
+    | '__root__'
+    | '/_app'
+    | '/login'
+    | '/_app/$listId'
+    | '/lists/$listId'
+    | '/_app/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
   AppRoute: typeof AppRouteWithChildren
   LoginRoute: typeof LoginRoute
+  ListsListIdRoute: typeof ListsListIdRoute
 }
 
 declare module '@tanstack/solid-router' {
@@ -86,6 +102,13 @@ declare module '@tanstack/solid-router' {
       fullPath: '/'
       preLoaderRoute: typeof AppIndexRouteImport
       parentRoute: typeof AppRoute
+    }
+    '/lists/$listId': {
+      id: '/lists/$listId'
+      path: '/lists/$listId'
+      fullPath: '/lists/$listId'
+      preLoaderRoute: typeof ListsListIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_app/$listId': {
       id: '/_app/$listId'
@@ -112,6 +135,7 @@ const AppRouteWithChildren = AppRoute._addFileChildren(AppRouteChildren)
 const rootRouteChildren: RootRouteChildren = {
   AppRoute: AppRouteWithChildren,
   LoginRoute: LoginRoute,
+  ListsListIdRoute: ListsListIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

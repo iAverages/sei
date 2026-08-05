@@ -5,7 +5,7 @@ import { type HeaderButtonsArea, HeaderButtonsProvider } from "~/components/ui/s
 import { Header } from "~/components/ui/sidebar/header";
 import { AppSidebar } from "~/components/ui/sidebar/sidebar";
 import { Cookies } from "~/lib/cookies";
-import { fetchImportStatus } from "~/lib/list";
+import { fetchImportStatus, fetchLists } from "~/lib/list";
 import { prependSlash } from "~/lib/utils";
 
 const handleGoToRedirect = () => {
@@ -33,14 +33,12 @@ export const Route = createFileRoute("/_app")({
         return { user };
     },
     loader: async ({ context: { user } }) => {
+        const [isImporting, lists] = await Promise.all([fetchImportStatus(), fetchLists()]);
         return {
             user,
-            isImporting: await fetchImportStatus(),
+            isImporting,
             crumb: "List",
-            data: [
-                { id: "default", name: "Default" },
-                { id: "movies", name: "Movies" },
-            ],
+            lists,
         };
     },
 });
@@ -87,7 +85,7 @@ function RouteComponent() {
                         "--header-height": "calc(var(--spacing) * 12)",
                     }}
                 >
-                    <AppSidebar user={data().user} />
+                    <AppSidebar user={data().user} lists={data().lists} />
                     <SidebarInset>
                         <Header setButtonsAreaRef={setHeaderButtonsArea} />
                         <div class="flex flex-1 flex-col">

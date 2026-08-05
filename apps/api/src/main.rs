@@ -18,7 +18,7 @@ use axum::{
     http::{HeaderValue, Method, StatusCode},
     middleware::from_fn_with_state,
     response::{IntoResponse, Response},
-    routing::{get, post},
+    routing::{delete, get, patch, post, put},
     Extension, Json, Router,
 };
 use axum_extra::extract::cookie::Key;
@@ -77,7 +77,13 @@ async fn main() {
     let mal_client_secret = std::env::var("MAL_CLIENT_SECRET").expect("MAL_CLIENT_SECRET not set");
 
     let cors = CorsLayer::new()
-        .allow_methods([Method::GET, Method::POST])
+        .allow_methods([
+            Method::GET,
+            Method::POST,
+            Method::PATCH,
+            Method::PUT,
+            Method::DELETE,
+        ])
         .allow_credentials(true)
         .allow_headers(AllowHeaders::mirror_request())
         .allow_origin(AllowOrigin::exact(
@@ -107,20 +113,34 @@ async fn main() {
 
     let oauth_client = create_oauth_client(api_url, mal_client_id.clone(), mal_client_secret);
 
+    let protected_api = Router::new()
+        .route("/test", get(test))
+        .route("/auth/me", get(routes::user::get_user))
+        .route("/user/import-status", get(routes::user::get_import_status))
+        .route("/user/list", get(routes::user::get_list))
+        .route("/user/list", post(routes::user::update_list_order))
+        .route("/user/list/sse", get(routes::user::join_sse))
+        .route("/lists", get(routes::list::get_lists))
+        .route("/lists", post(routes::list::create_list))
+        .route("/lists/:list_id", get(routes::list::get_list))
+        .route("/lists/:list_id", patch(routes::list::update_list))
+        .route("/lists/:list_id/entries", post(routes::list::add_entries))
+        .route(
+            "/lists/:list_id/entries/:anime_id",
+            delete(routes::list::delete_entry),
+        )
+        .route("/lists/:list_id/order", put(routes::list::update_order))
+        .route("/anime/search", get(routes::list::search_anime))
+        .route_layer(from_fn_with_state(state.clone(), guard));
+
+    let api = Router::new()
+        .merge(protected_api)
+        .route("/public/lists/:list_id", get(routes::list::get_public_list))
+        .with_state(state.clone());
+
     let app = Router::new()
         .nest_service("/", ServeDir::new("public"))
-        .nest(
-            "/api/v1",
-            Router::new()
-                .route("/test", get(test))
-                .route("/auth/me", get(routes::user::get_user))
-                .route("/user/import-status", get(routes::user::get_import_status))
-                .route("/user/list", get(routes::user::get_list))
-                .route("/user/list", post(routes::user::update_list_order))
-                .route("/user/list/sse", get(routes::user::join_sse))
-                .route_layer(from_fn_with_state(state.clone(), guard))
-                .with_state(state.clone()),
-        )
+        .nest("/api/v1", api)
         .route(
             "/oauth/mal/redirect",
             get(routes::auth::handle_mal_redirect),

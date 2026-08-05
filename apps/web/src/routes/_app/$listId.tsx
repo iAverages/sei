@@ -1,12 +1,12 @@
 import { DragDropProvider, type DragDropProviderProps, DragOverlay } from "@dnd-kit/solid";
 import { isSortable } from "@dnd-kit/solid/sortable";
 import { useMutation } from "@tanstack/solid-query";
-import { createFileRoute } from "@tanstack/solid-router";
-import { type Accessor, batch, createSignal, For } from "solid-js";
-import { createStore } from "solid-js/store";
+import { createFileRoute, useRouter } from "@tanstack/solid-router";
+import { type Accessor, createSignal, For, Show } from "solid-js";
 import { toast } from "solid-sonner";
 import { AnimeCard, DraggableAnimeCard } from "~/components/anime-card";
 import { BackToTop } from "~/components/back-to-top";
+import { ListForm } from "~/components/list-form";
 import {
     AlertDialog,
     AlertDialogContent,
@@ -17,187 +17,194 @@ import {
     AlertDialogTrigger,
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
+import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "~/components/ui/sheet";
 import { HeaderButtonsPortal } from "~/components/ui/sidebar/buttons-portal";
-import { type AnimeListStatus, fetchList, updateListOrder } from "~/lib/list";
+import {
+    type Anime,
+    addListEntries,
+    fetchList,
+    type ListDetail,
+    removeListEntry,
+    updateList,
+    updateListOrder,
+} from "~/lib/list";
 import { moveIndexToStart } from "~/lib/utils";
 
 export const Route = createFileRoute("/_app/$listId")({
     component: RouteComponent,
     ssr: false,
-    loader: async () => {
-        const { anime } = await fetchList();
-        return {
-            crumb: "Default",
-            anime,
-        };
+    loader: async ({ params }) => {
+        const detail = await fetchList(params.listId);
+        return { ...detail, crumb: detail.list.name };
     },
 });
-const useArrayStore = <TData, TId>(defaultValue: TData[], opts: { getId: (data: TData) => TId }) => {
-    const getIds = (data: TData[]) => data.map(opts.getId);
-    // only data is reactive, ids is used to checking if values exist in data but faster and
-    // does not need to be reactive
-    const [data, setData] = createStore(defaultValue);
-    // ids is an array since we need the item ids as an array for the dnd components
-    // and do not want to recreate it every time the data changes
-    const [ids, setIds] = createStore(getIds(data));
-    // however we want a fast lookup for animes we  have stored, we use a map which is
-    // itemId -> index in storage for faster lookups
-    const idsMap = new Map(ids.map((id, index) => [id, index]));
-
-    const remove = (index: number) => {
-        batch(() => {
-            setData((prev) => {
-                const removed = prev.splice(index, 1);
-                removed.forEach((data) => {
-                    const dataId = opts.getId(data);
-                    const dataIndex = idsMap.get(dataId);
-                    console.assert(dataIndex !== undefined, "failed to find dataId in idsMap", dataId);
-                    idsMap.delete(dataId);
-                    setIds((prev) => {
-                        prev.splice(dataIndex!, 1);
-                        return prev;
-                    });
-                });
-                return prev;
-            });
-        });
-    };
-
-    const replace = (data: TData[]) => {
-        batch(() => {
-            setData(data);
-            idsMap.clear();
-            const newIds = getIds(data);
-            setIds(newIds);
-            newIds.forEach((id, index) => void idsMap.set(id, index));
-        });
-    };
-
-    return {
-        ids,
-        data,
-        remove,
-        replace,
-    };
-};
 
 function RouteComponent() {
     const data = Route.useLoaderData();
-    const [hasReordered, setHasReordered] = createSignal(false);
-    let initalAnime = [...data().anime];
-    const {
-        data: animes,
-        ids: animeIdsArray,
-        replace: setAnimes,
-    } = useArrayStore([...data().anime], { getId: (data) => data.id });
+    return (
+        <Show when={data()} keyed>
+            {(detail) => <ListPage detail={detail} />}
+        </Show>
+    );
+}
 
-    const updateAnimeOrder = (updatedItems: typeof animes) => {
-        setAnimes(updatedItems);
-        setHasReordered(!updatedItems.every((anime, index) => initalAnime[index]?.id === anime.id));
-    };
+function ListPage(props: { detail: ListDetail }) {
+    const router = useRouter();
+    const listId = props.detail.list.id;
+    const [anime, setAnime] = createSignal([...props.detail.anime]);
+    const [baseline, setBaseline] = createSignal([...props.detail.anime]);
+    const [editOpen, setEditOpen] = createSignal(false);
+    const hasReordered = () => !anime().every((item, index) => baseline()[index]?.id === item.id);
 
+    const orderMutation = useMutation(() => ({
+        mutationKey: ["list", listId, "order"],
+        mutationFn: async (ids: number[]) => updateListOrder(listId, ids),
+        onSuccess: () => {
+            setBaseline([...anime()]);
+            toast("List order saved");
+        },
+        onError: (error) => toast.error(error.message),
+    }));
+    const removeMutation = useMutation(() => ({
+        mutationKey: ["list", listId, "entry", "remove"],
+        mutationFn: async (animeId: number) => removeListEntry(listId, animeId),
+        onSuccess: async () => {
+            toast("Anime removed from list");
+            await router.invalidate();
+        },
+        onError: (error) => toast.error(error.message),
+    }));
+
+    const updateAnimeOrder = (items: Anime[]) => setAnime(items);
     const onDragEnd: NonNullable<DragDropProviderProps["onDragEnd"]> = ({ canceled, operation }) => {
         if (canceled || !isSortable(operation.source)) return;
-        const draggingAnime = operation.source.initialIndex;
-        const droppingAnime = operation.source.index;
-        if (draggingAnime === droppingAnime) return;
+        const sourceIndex = operation.source.initialIndex;
+        const targetIndex = operation.source.index;
+        if (sourceIndex === targetIndex) return;
 
-        const updatedItems = animes.slice();
-        updatedItems.splice(droppingAnime, 0, ...updatedItems.splice(draggingAnime, 1));
+        const updatedItems = anime().slice();
+        updatedItems.splice(targetIndex, 0, ...updatedItems.splice(sourceIndex, 1));
         updateAnimeOrder(updatedItems);
     };
-
-    const updateListOrderMutation = useMutation(() => ({
-        mutationKey: ["list", "update"],
-        mutationFn: async (ids: number[]) => {
-            await updateListOrder(ids);
-            initalAnime = ids.map((id) => animes.find((a) => a.id === id)!);
-            setHasReordered(false);
-            toast("List order saved successfully");
-        },
-    }));
-
-    const updateAnimeStatus = useMutation(() => ({
-        mutationKey: ["anime", "status", "update"],
-        mutationFn: async ({ animeId, status }: { animeId: number; status: AnimeListStatus }) => {},
-    }));
+    const busy = () => orderMutation.isPending || removeMutation.isPending;
 
     return (
-        <fieldset
-            disabled={updateListOrderMutation.isPending || updateAnimeStatus.isPending}
-            class="flex flex-col gap-2"
-        >
+        <fieldset disabled={busy()} class="flex flex-col gap-3">
             <BackToTop />
             <HeaderButtonsPortal>
-                <div>
-                    <div class="flex gap-2">
-                        <Button
-                            disabled={!hasReordered()}
-                            onClick={() => updateListOrderMutation.mutate(animeIdsArray)}
-                        >
-                            Save List Order
+                <div class="ml-auto flex flex-wrap gap-2">
+                    <Show when={!props.detail.list.isDefault}>
+                        <Button variant="outline" disabled={hasReordered()} onClick={() => setEditOpen(true)}>
+                            Edit
                         </Button>
-                        <ResetButton hasReordered={hasReordered} reset={() => updateAnimeOrder([...initalAnime])} />
-                    </div>
+                    </Show>
+                    <Button
+                        disabled={!hasReordered()}
+                        onClick={() => orderMutation.mutate(anime().map(({ id }) => id))}
+                    >
+                        Save order
+                    </Button>
+                    <ResetButton hasReordered={hasReordered} reset={() => updateAnimeOrder([...baseline()])} />
                 </div>
             </HeaderButtonsPortal>
 
-            <div>
+            <Show
+                when={anime().length > 0}
+                fallback={
+                    <section class="flex min-h-80 flex-col items-center justify-center rounded-lg border border-dashed border-border px-6 text-center">
+                        <h1 class="text-xl font-semibold">This list is empty</h1>
+                        <p class="mt-2 max-w-md text-sm text-muted-foreground">
+                            {props.detail.list.isDefault
+                                ? "Anime from your imported watching and planning list will appear here."
+                                : "Use Edit to search your local anime catalog and add the first title."}
+                        </p>
+                        <Show when={!props.detail.list.isDefault}>
+                            <Button class="mt-5" onClick={() => setEditOpen(true)}>
+                                Add anime
+                            </Button>
+                        </Show>
+                    </section>
+                }
+            >
                 <DragDropProvider onDragEnd={onDragEnd}>
                     <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8">
-                        <For each={animes}>
-                            {(anime, index) => (
+                        <For each={anime()}>
+                            {(item, index) => (
                                 <DraggableAnimeCard
                                     index={index()}
-                                    anime={anime}
-                                    disabled={updateListOrderMutation.isPending || updateAnimeStatus.isPending}
-                                    bringToFront={() => updateAnimeOrder(moveIndexToStart(animes, index()))}
-                                    setStatus={(status) => updateAnimeStatus.mutate({ animeId: anime.id, status })}
+                                    anime={item}
+                                    disabled={busy()}
+                                    bringToFront={() => updateAnimeOrder(moveIndexToStart(anime(), index()))}
+                                    remove={
+                                        props.detail.list.isDefault || hasReordered()
+                                            ? undefined
+                                            : () => removeMutation.mutate(item.id)
+                                    }
                                 />
                             )}
                         </For>
                     </div>
-                    <DragOverlay class={"transition-transform"}>
-                        {(source) => {
-                            return <AnimeCard anime={animes.find((anime) => anime.id === source.id)!} />;
-                        }}
+                    <DragOverlay class="transition-transform">
+                        {(source) => <AnimeCard anime={anime().find(({ id }) => id === source.id)!} />}
                     </DragOverlay>
                 </DragDropProvider>
-            </div>
+            </Show>
+
+            <Show when={!props.detail.list.isDefault}>
+                <Sheet open={editOpen()} onOpenChange={setEditOpen}>
+                    <SheetContent>
+                        <SheetHeader>
+                            <SheetTitle>Edit {props.detail.list.name}</SheetTitle>
+                            <SheetDescription>Update list details or add more anime.</SheetDescription>
+                        </SheetHeader>
+                        <Show when={editOpen()}>
+                            <ListForm
+                                initialName={props.detail.list.name}
+                                initialVisibility={props.detail.list.visibility}
+                                existingAnimeIds={props.detail.anime.map(({ id }) => id)}
+                                shareUrl={`/lists/${listId}`}
+                                submitLabel="Save changes"
+                                onSubmit={async ({ name, visibility, animeIds }) => {
+                                    await updateList(listId, { name, visibility });
+                                    if (animeIds.length > 0) await addListEntries(listId, animeIds);
+                                    setEditOpen(false);
+                                    await router.invalidate();
+                                }}
+                            />
+                        </Show>
+                    </SheetContent>
+                </Sheet>
+            </Show>
         </fieldset>
     );
 }
 
 const ResetButton = (props: { hasReordered: Accessor<boolean>; reset: () => void }) => {
     const [open, setOpen] = createSignal(false);
-    const handleAccept = async () => {
-        props.reset();
-        setOpen(false);
-    };
-
-    const handleDeny = () => {
-        setOpen(false);
-    };
-
     return (
         <AlertDialog open={open()} onOpenChange={setOpen}>
-            <AlertDialogTrigger as={Button} disabled={!props.hasReordered()}>
+            <AlertDialogTrigger as={Button} variant="outline" disabled={!props.hasReordered()}>
                 Reset
             </AlertDialogTrigger>
-
             <AlertDialogContent>
                 <AlertDialogHeader>
-                    <AlertDialogTitle>Are you absolutely sure?</AlertDialogTitle>
+                    <AlertDialogTitle>Reset your unsaved order?</AlertDialogTitle>
                     <AlertDialogDescription>
-                        This action cannot be undone. This will reset any changes you have made to this list since the
-                        last save.
+                        This restores the order from the last saved version.
                     </AlertDialogDescription>
                 </AlertDialogHeader>
-                <AlertDialogFooter class="flex justify-between w-full sm:justify-between md:justify-between">
-                    <Button variant={"destructive"} onClick={handleAccept}>
-                        Yes, reset list order
+                <AlertDialogFooter>
+                    <Button variant="outline" onClick={() => setOpen(false)}>
+                        Cancel
                     </Button>
-                    <Button onClick={handleDeny}>No, do not reset list order</Button>
+                    <Button
+                        onClick={() => {
+                            props.reset();
+                            setOpen(false);
+                        }}
+                    >
+                        Reset order
+                    </Button>
                 </AlertDialogFooter>
             </AlertDialogContent>
         </AlertDialog>

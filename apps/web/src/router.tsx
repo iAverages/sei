@@ -31,8 +31,22 @@ export function getRouter() {
     const router = createRouter({
         routeTree,
         defaultPreload: "intent",
-        defaultErrorComponent: (err) => <p>{err.error.stack}</p>,
-        defaultNotFoundComponent: () => <p>not found</p>,
+        defaultErrorComponent: () => (
+            <main class="flex min-h-screen items-center justify-center bg-background px-6 text-center text-foreground">
+                <div>
+                    <h1 class="text-2xl font-semibold">Something went wrong</h1>
+                    <p class="mt-2 text-sm text-muted-foreground">The requested page could not be loaded.</p>
+                </div>
+            </main>
+        ),
+        defaultNotFoundComponent: () => (
+            <main class="flex min-h-screen items-center justify-center bg-background px-6 text-center text-foreground">
+                <div>
+                    <h1 class="text-2xl font-semibold">Page not found</h1>
+                    <p class="mt-2 text-sm text-muted-foreground">This page does not exist or is not available.</p>
+                </div>
+            </main>
+        ),
         scrollRestoration: true,
         context: createRouterContext(),
         defaultOnCatch(error) {
