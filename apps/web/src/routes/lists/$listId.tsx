@@ -1,12 +1,31 @@
-import { createFileRoute } from "@tanstack/solid-router";
+import { createFileRoute, notFound } from "@tanstack/solid-router";
 import { For, Show } from "solid-js";
 import { AnimeCard } from "~/components/anime-card";
-import { fetchPublicList } from "~/lib/list";
+import { fetchPublicList, ListApiError } from "~/lib/list";
 
 export const Route = createFileRoute("/lists/$listId")({
-    loader: async ({ params }) => ({ ...(await fetchPublicList(params.listId)), crumb: undefined }),
+    loader: async ({ params }) => {
+        try {
+            return { ...(await fetchPublicList(params.listId)), crumb: undefined };
+        } catch (error) {
+            if (error instanceof ListApiError && error.status === 404) throw notFound();
+            throw error;
+        }
+    },
     component: PublicListPage,
+    notFoundComponent: UnavailableListPage,
 });
+
+function UnavailableListPage() {
+    return (
+        <main class="flex min-h-screen items-center justify-center bg-background px-6 text-center text-foreground">
+            <div>
+                <h1 class="text-2xl font-semibold">List not available</h1>
+                <p class="mt-2 text-sm text-muted-foreground">This list is private or no longer exists.</p>
+            </div>
+        </main>
+    );
+}
 
 function PublicListPage() {
     const detail = Route.useLoaderData();

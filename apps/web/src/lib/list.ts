@@ -41,6 +41,15 @@ export type ListSummary = z.infer<typeof listSummarySchema>;
 export type ListDetail = z.infer<typeof listDetailSchema>;
 export type Anime = z.infer<typeof animeSchema>;
 
+export class ListApiError extends Error {
+    constructor(
+        message: string,
+        readonly status: number,
+    ) {
+        super(message);
+    }
+}
+
 const responseError = async (response: Response, action: string) => {
     let message: string | undefined;
     try {
@@ -49,7 +58,7 @@ const responseError = async (response: Response, action: string) => {
     } catch {
         // The status still provides useful context for non-JSON errors.
     }
-    return new Error(message ?? `${action} (${response.status} ${response.statusText})`);
+    return new ListApiError(message ?? `${action} (${response.status} ${response.statusText})`, response.status);
 };
 
 const requestJson = async <T>(response: Response, schema: z.ZodType<T>, action: string): Promise<T> => {
