@@ -9,7 +9,7 @@ pub fn create_oauth_client(
     client_id: String,
     client_secret: String,
 ) -> BasicClient {
-    let redirect_url = api_url + "/oauth/mal/callback";
+    let redirect_url = api_url + "/api/oauth/mal/callback";
     let auth_url = AuthUrl::new(AUTH_URL.to_string()).expect("Invalid authorization endpoint URL");
     let token_url = TokenUrl::new(TOKEN_URL.to_string()).expect("Invalid token endpoint URL");
 

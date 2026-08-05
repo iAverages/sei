@@ -8,10 +8,7 @@ mod mal;
 mod middleware;
 mod models;
 mod routes;
-use std::{
-    fmt::{self, Display, Formatter},
-    net::SocketAddr,
-};
+use std::fmt::{self, Display, Formatter};
 
 use axum::{
     extract::{FromRef, State},
@@ -30,7 +27,6 @@ use serde_json::json;
 use sqlx::mysql::MySqlPoolOptions;
 use tokio::sync::broadcast;
 use tower_http::cors::{AllowHeaders, AllowOrigin, CorsLayer};
-use tower_http::services::ServeDir;
 
 use crate::{auth::oauth::create_oauth_client, importer::Importer, middleware::auth_guard::guard};
 
@@ -72,7 +68,9 @@ async fn main() {
     tracing::info!("Starting server...");
 
     // TODO: improve env validation handling
-    let api_url = std::env::var("API_URL").unwrap_or("http://localhost:3000".to_string());
+    let app_origin = std::env::var("APP_ORIGIN")
+        .or_else(|_| std::env::var("API_URL"))
+        .unwrap_or("http://localhost:3000".to_string());
     let mal_client_id = std::env::var("MAL_CLIENT_ID").expect("MAL_CLIENT_ID not set");
     let mal_client_secret = std::env::var("MAL_CLIENT_SECRET").expect("MAL_CLIENT_SECRET not set");
 
@@ -87,7 +85,7 @@ async fn main() {
         .allow_credentials(true)
         .allow_headers(AllowHeaders::mirror_request())
         .allow_origin(AllowOrigin::exact(
-            HeaderValue::from_str(api_url.as_str()).unwrap(),
+            HeaderValue::from_str(app_origin.as_str()).unwrap(),
         ));
 
     let db_url = std::env::var("DATABASE_URL").expect("DATABASE_URL not set");
@@ -111,7 +109,7 @@ async fn main() {
 
     importer.start();
 
-    let oauth_client = create_oauth_client(api_url, mal_client_id.clone(), mal_client_secret);
+    let oauth_client = create_oauth_client(app_origin, mal_client_id.clone(), mal_client_secret);
 
     let protected_api = Router::new()
         .route("/test", get(test))
@@ -139,22 +137,22 @@ async fn main() {
         .with_state(state.clone());
 
     let app = Router::new()
-        .nest_service("/", ServeDir::new("public"))
         .nest("/api/v1", api)
         .route(
-            "/oauth/mal/redirect",
+            "/api/oauth/mal/redirect",
             get(routes::auth::handle_mal_redirect),
         )
         .route(
-            "/oauth/mal/callback",
+            "/api/oauth/mal/callback",
             get(routes::auth::handle_mal_callback),
         )
+        .route("/api/health", get(|| async { StatusCode::NO_CONTENT }))
         .layer(Extension(oauth_client))
         .layer(cors)
         .with_state(state.clone());
 
-    let address = SocketAddr::from(([0, 0, 0, 0], 3001));
-    let listener = tokio::net::TcpListener::bind(address).await.unwrap();
+    let address = std::env::var("BIND_ADDR").unwrap_or("0.0.0.0:3001".to_string());
+    let listener = tokio::net::TcpListener::bind(&address).await.unwrap();
     tracing::info!("listening on {}", address);
     axum::serve(listener, app.into_make_service())
         .await

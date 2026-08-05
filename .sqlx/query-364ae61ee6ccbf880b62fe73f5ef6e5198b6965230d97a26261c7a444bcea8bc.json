@@ -1,0 +1,12 @@
+{
+  "db_name": "MySQL",
+  "query": "UPDATE\n    `anime_job_queue`\nSET\n    `status` = ?\nWHERE\n    `status` = ?\nORDER BY\n    `created_at` ASC\nLIMIT\n    ?\n",
+  "describe": {
+    "columns": [],
+    "parameters": {
+      "Right": 3
+    },
+    "nullable": []
+  },
+  "hash": "364ae61ee6ccbf880b62fe73f5ef6e5198b6965230d97a26261c7a444bcea8bc"
+}

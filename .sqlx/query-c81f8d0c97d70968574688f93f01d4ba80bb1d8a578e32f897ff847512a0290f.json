@@ -1,0 +1,24 @@
+{
+  "db_name": "MySQL",
+  "query": "\nWITH RECURSIVE RelatedItems AS (\n    -- Anchor member: Get all items directly linked to the user\n    SELECT\n        ui.anime_id AS id\n    FROM\n        `anime_users` ui\n    WHERE\n        ui.user_id = ?\n\n    UNION DISTINCT\n\n    -- Recursive member: Find items related to the previously found items\n    SELECT\n        CASE\n            WHEN ir.anime_id = ri.id THEN ir.relation_id\n            ELSE ir.anime_id\n        END AS id\n    FROM\n        `anime_relations` ir\n    INNER JOIN\n        RelatedItems ri ON ir.anime_id = ri.id OR ir.relation_id = ri.id\n    WHERE\n        (ir.anime_id = ri.id AND ir.relation_id IS NOT NULL) OR (ir.relation_id = ri.id AND ir.anime_id IS NOT NULL)\n)\nSELECT DISTINCT\n    id\nFROM\n    RelatedItems;\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "Long",
+          "flags": "",
+          "max_size": 11
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      true
+    ]
+  },
+  "hash": "c81f8d0c97d70968574688f93f01d4ba80bb1d8a578e32f897ff847512a0290f"
+}

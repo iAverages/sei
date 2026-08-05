@@ -2,7 +2,7 @@ import { createIsomorphicFn } from "@tanstack/solid-start";
 import { Cookies } from "./cookies";
 
 const getApiUrl = createIsomorphicFn()
-    .server(() => "http://localhost:3001")
+    .server(() => process.env.INTERNAL_API_ORIGIN ?? "http://localhost:3001")
     .client(() => "");
 
 export const api = (input: RequestInfo | URL, init?: RequestInit) => {

@@ -22,7 +22,7 @@ export const LoginButton = (props: LoginButtonProps) => {
             {...props}
             size={props.size}
             as={"a"}
-            href={`/oauth/${props.provider}/redirect`}
+            href={`/api/oauth/${props.provider}/redirect`}
             class={cn(
                 "font-semibold tracking-tight shadow-lg transition-transform active:scale-[0.98] cursor-pointer",
                 "rounded-xl px-6 py-6",

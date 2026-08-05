@@ -10,20 +10,11 @@ export const Route = createFileRoute("/lists/$listId")({
 
 function PublicListPage() {
     const detail = Route.useLoaderData();
-    const visibility = () => (detail().list.visibility === "PUBLIC" ? "Public" : "Unlisted");
 
     return (
         <main class="min-h-screen bg-background px-3 py-8 text-foreground sm:px-6 lg:px-10">
             <header class="mx-auto mb-8 max-w-screen-2xl border-b border-border pb-6">
-                <a href="/" class="text-sm font-semibold tracking-wide text-muted-foreground">
-                    Sei
-                </a>
-                <div class="mt-4 flex flex-wrap items-end justify-between gap-3">
-                    <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">{detail().list.name}</h1>
-                    <span class="rounded-full border border-border bg-muted px-3 py-1 text-xs font-medium uppercase tracking-wider text-muted-foreground">
-                        {visibility()}
-                    </span>
-                </div>
+                <h1 class="text-3xl font-semibold tracking-tight sm:text-4xl">{detail().list.name}</h1>
             </header>
             <section class="mx-auto max-w-screen-2xl">
                 <Show

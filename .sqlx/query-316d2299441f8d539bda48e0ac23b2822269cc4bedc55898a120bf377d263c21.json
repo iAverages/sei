@@ -1,0 +1,54 @@
+{
+  "db_name": "MySQL",
+  "query": "SELECT\n    `id`,\n    `anime_id`,\n    `status`,\n    `triggered_by_id`\nFROM\n    `anime_job_queue`\nWHERE\n    `status` = \"InProgress\"\nLIMIT\n    ?\n",
+  "describe": {
+    "columns": [
+      {
+        "ordinal": 0,
+        "name": "id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "NOT_NULL | PRIMARY_KEY | NO_DEFAULT_VALUE",
+          "max_size": 764
+        }
+      },
+      {
+        "ordinal": 1,
+        "name": "anime_id",
+        "type_info": {
+          "type": "Long",
+          "flags": "NOT_NULL | NO_DEFAULT_VALUE",
+          "max_size": 11
+        }
+      },
+      {
+        "ordinal": 2,
+        "name": "status",
+        "type_info": {
+          "type": "String",
+          "flags": "NOT_NULL | ENUM | NO_DEFAULT_VALUE",
+          "max_size": 40
+        }
+      },
+      {
+        "ordinal": 3,
+        "name": "triggered_by_id",
+        "type_info": {
+          "type": "VarString",
+          "flags": "MULTIPLE_KEY",
+          "max_size": 764
+        }
+      }
+    ],
+    "parameters": {
+      "Right": 1
+    },
+    "nullable": [
+      false,
+      false,
+      false,
+      true
+    ]
+  },
+  "hash": "316d2299441f8d539bda48e0ac23b2822269cc4bedc55898a120bf377d263c21"
+}
