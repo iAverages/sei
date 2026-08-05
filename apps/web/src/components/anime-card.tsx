@@ -1,4 +1,5 @@
-import { createSortable, useDragDropContext } from "@thisbeyond/solid-dnd";
+import { useDragOperation } from "@dnd-kit/solid";
+import { useSortable } from "@dnd-kit/solid/sortable";
 import { type Anime, AnimeListStatus } from "~/lib/list";
 import {
     ContextMenu,
@@ -43,16 +44,26 @@ export const DraggableAnimeCard = (props: {
     index: number;
     setStatus: (status: AnimeListStatus) => void;
 }) => {
-    const sortable = createSortable(props.anime.id);
-    const [state] = useDragDropContext()!;
+    const sortable = useSortable({
+        get id() {
+            return props.anime.id;
+        },
+        get index() {
+            return props.index;
+        },
+        get disabled() {
+            return props.disabled ?? false;
+        },
+    });
+    const operation = useDragOperation();
 
     return (
         <div
-            use:sortable
-            class="sortable transition-opacity touch-none"
+            ref={sortable.ref}
+            class="sortable transition-opacity"
             classList={{
-                "opacity-25 duration-250": sortable.isActiveDraggable || props.disabled,
-                "transition-transform": !!state.active.draggable,
+                "opacity-25 duration-250": sortable.isDragSource() || props.disabled,
+                "transition-transform": !!operation.source(),
             }}
         >
             <ContextMenu>

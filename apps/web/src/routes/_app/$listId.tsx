@@ -1,17 +1,8 @@
-import { makeEventListener } from "@solid-primitives/event-listener";
+import { DragDropProvider, type DragDropProviderProps, DragOverlay } from "@dnd-kit/solid";
+import { isSortable } from "@dnd-kit/solid/sortable";
 import { useMutation } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
-import { createWindowVirtualizer } from "@tanstack/solid-virtual";
-import {
-    closestCenter,
-    DragDropProvider,
-    DragDropSensors,
-    type DragEventHandler,
-    DragOverlay,
-    SortableProvider,
-    useDragDropContext,
-} from "@thisbeyond/solid-dnd";
-import { type Accessor, batch, createEffect, createSignal, For, onMount } from "solid-js";
+import { type Accessor, batch, createSignal, For } from "solid-js";
 import { createStore } from "solid-js/store";
 import { toast } from "solid-sonner";
 import { AnimeCard, DraggableAnimeCard } from "~/components/anime-card";
@@ -90,13 +81,6 @@ const useArrayStore = <TData, TId>(defaultValue: TData[], opts: { getId: (data: 
     };
 };
 
-const computedStyle = window.getComputedStyle(document.documentElement);
-const fontSize = computedStyle.getPropertyValue("font-size");
-
-const getRemPixels = (rem: number) => {
-    return Number.parseFloat(fontSize) * rem;
-};
-
 function RouteComponent() {
     const data = Route.useLoaderData();
     const [hasReordered, setHasReordered] = createSignal(false);
@@ -107,61 +91,20 @@ function RouteComponent() {
         replace: setAnimes,
     } = useArrayStore([...data().anime], { getId: (data) => data.id });
 
-    // biome-ignore lint/style/useConst: used for ref to dom node
-    let gridRef: HTMLDivElement = null!;
-    const lanes = 8;
-    const gap = getRemPixels(0.75);
-    const virtualizer = createWindowVirtualizer({
-        get count() {
-            return animes.length;
-        },
-        lanes,
-        estimateSize: () => 317,
-        gap,
-        overscan: 5,
-        scrollMargin: gridRef?.offsetTop ?? 0,
-    });
+    const updateAnimeOrder = (updatedItems: typeof animes) => {
+        setAnimes(updatedItems);
+        setHasReordered(!updatedItems.every((anime, index) => initalAnime[index]?.id === anime.id));
+    };
 
-    // const hasReordered = () => {
-    //     return false;
-    // return !animes.every((animeA, index) => initalAnime[index].id === animeA.id);
-    // };
+    const onDragEnd: NonNullable<DragDropProviderProps["onDragEnd"]> = ({ canceled, operation }) => {
+        if (canceled || !isSortable(operation.source)) return;
+        const draggingAnime = operation.source.initialIndex;
+        const droppingAnime = operation.source.index;
+        if (draggingAnime === droppingAnime) return;
 
-    // "hack" to not update hasReordered when adding anime during first import
-    // if this is true then we will update hasReordered if anime changes
-    let justDragged = false;
-    createEffect(() => {
-        if (!justDragged) {
-            console.log("anime updated but we didnt drag");
-            return;
-        }
-        console.log("animes updated");
-        const reordered = !animes.every((animeA, index) => initalAnime[index].id === animeA.id);
-        setHasReordered(reordered);
-        justDragged = false;
-    });
-
-    const onDragEnd: DragEventHandler = (event) => {
-        if (!event.droppable) return;
-        const draggingAnime = animes.findIndex((anime) => anime.id === event.draggable.id);
-        if (draggingAnime === -1) {
-            console.warn("unable to find dragging anime", event.draggable.id);
-            return;
-        }
-
-        const droppingAnime = animes.findIndex((anime) => anime.id === event.droppable!.id);
-        if (droppingAnime === -1) {
-            console.warn("unable to find dropping anime", event.draggable.id);
-            return;
-        }
-
-        // no need to update if no items actually moved
-        if (droppingAnime === draggingAnime) return;
-        justDragged = true;
         const updatedItems = animes.slice();
         updatedItems.splice(droppingAnime, 0, ...updatedItems.splice(draggingAnime, 1));
-        setAnimes(updatedItems);
-        virtualizer.measure();
+        updateAnimeOrder(updatedItems);
     };
 
     const updateListOrderMutation = useMutation(() => ({
@@ -169,6 +112,7 @@ function RouteComponent() {
         mutationFn: async (ids: number[]) => {
             await updateListOrder(ids);
             initalAnime = ids.map((id) => animes.find((a) => a.id === id)!);
+            setHasReordered(false);
             toast("List order saved successfully");
         },
     }));
@@ -193,61 +137,29 @@ function RouteComponent() {
                         >
                             Save List Order
                         </Button>
-                        <ResetButton hasReordered={hasReordered} reset={() => setAnimes([...initalAnime])} />
+                        <ResetButton hasReordered={hasReordered} reset={() => updateAnimeOrder([...initalAnime])} />
                     </div>
                 </div>
             </HeaderButtonsPortal>
 
             <div>
-                <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
-                    <ScrollDragFix />
-                    <DragDropSensors />
-                    <SortableProvider ids={animeIdsArray}>
-                        <div ref={gridRef}>
-                            <div
-                                style={{
-                                    height: `${virtualizer.getTotalSize()}px`,
-                                    width: "100%",
-                                    position: "relative",
-                                }}
-                                class="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8 gap-3"
-                            >
-                                <For each={virtualizer.getVirtualItems()}>
-                                    {(item) => {
-                                        console.log({ animes });
-                                        const anime = animes[item.index]!;
-                                        return (
-                                            <div
-                                                ref={(el) => queueMicrotask(() => virtualizer.measureElement(el))}
-                                                data-index={item.index.toString()}
-                                                style={{
-                                                    position: "absolute",
-                                                    top: 0,
-                                                    left: `${(100 / lanes) * item.lane}% `,
-                                                    // left: `calc(${(100 / lanes) * item.lane}% - ${gap / 2}px)`,
-                                                    width: `calc(${100 / lanes}% - ${gap}px)`,
-                                                    height: `${item.size}px`,
-                                                    transform: `translateY(${item.start}px)`,
-                                                }}
-                                            >
-                                                <DraggableAnimeCard
-                                                    index={item.index}
-                                                    anime={anime}
-                                                    bringToFront={() => setAnimes(moveIndexToStart(animes, item.index))}
-                                                    setStatus={(status) =>
-                                                        updateAnimeStatus.mutate({ animeId: anime.id, status })
-                                                    }
-                                                />
-                                            </div>
-                                        );
-                                    }}
-                                </For>
-                            </div>
-                        </div>
-                    </SortableProvider>
+                <DragDropProvider onDragEnd={onDragEnd}>
+                    <div class="grid grid-cols-2 gap-3 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-5 2xl:grid-cols-6 3xl:grid-cols-8">
+                        <For each={animes}>
+                            {(anime, index) => (
+                                <DraggableAnimeCard
+                                    index={index()}
+                                    anime={anime}
+                                    disabled={updateListOrderMutation.isPending || updateAnimeStatus.isPending}
+                                    bringToFront={() => updateAnimeOrder(moveIndexToStart(animes, index()))}
+                                    setStatus={(status) => updateAnimeStatus.mutate({ animeId: anime.id, status })}
+                                />
+                            )}
+                        </For>
+                    </div>
                     <DragOverlay class={"transition-transform"}>
-                        {(draggable) => {
-                            return <AnimeCard anime={animes.find((a) => a.id === draggable!.id)!} />;
+                        {(source) => {
+                            return <AnimeCard anime={animes.find((anime) => anime.id === source.id)!} />;
                         }}
                     </DragOverlay>
                 </DragDropProvider>
@@ -290,30 +202,4 @@ const ResetButton = (props: { hasReordered: Accessor<boolean>; reset: () => void
             </AlertDialogContent>
         </AlertDialog>
     );
-};
-
-// Fixes issue with being able to drag beyond some point
-// im assuimg the images break the layout and solid-dnd doesnt
-// pick it up for whatever reason
-const ScrollDragFix = () => {
-    const [, { recomputeLayouts }] = useDragDropContext()!;
-
-    let ticking = false;
-
-    const update = () => {
-        if (!ticking) {
-            window.requestAnimationFrame(() => {
-                recomputeLayouts();
-                ticking = false;
-            });
-
-            ticking = true;
-        }
-    };
-
-    onMount(() => {
-        makeEventListener(document, "scroll", update);
-    });
-
-    return null;
 };
