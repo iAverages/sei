@@ -113,8 +113,14 @@ pub async fn get_list(
         let anime = list::get_default_anime(&state.db, &user.id)
             .await
             .map_err(|error| ListApiError::internal("failed to get default list", error))?;
+        let summary = list::get_default_summary(&state.db, &user.id)
+            .await
+            .map_err(|error| {
+                ListApiError::internal("failed to get default list visibility", error)
+            })?
+            .ok_or_else(ListApiError::not_found)?;
         return Ok(Json(ListDetail {
-            list: ListSummary::default_list(),
+            list: summary,
             anime,
         }));
     }
@@ -133,16 +139,28 @@ pub async fn get_public_list(
     State(state): State<AppState>,
     Path(list_id): Path<String>,
 ) -> ApiResult<Json<ListDetail>> {
-    if list_id == DEFAULT_LIST_ID {
-        return Err(ListApiError::not_found());
-    }
-    let summary = list::get_public_summary(&state.db, &list_id)
+    if let Some(summary) = list::get_public_summary(&state.db, &list_id)
         .await
         .map_err(|error| ListApiError::internal("failed to get public list", error))?
-        .ok_or_else(ListApiError::not_found)?;
-    let anime = list::get_custom_anime(&state.db, &list_id)
+    {
+        let anime = list::get_custom_anime(&state.db, &list_id)
+            .await
+            .map_err(|error| ListApiError::internal("failed to get public list entries", error))?;
+        return Ok(Json(ListDetail {
+            list: summary,
+            anime,
+        }));
+    }
+
+    let summary = list::get_public_default_summary(&state.db, &list_id)
         .await
-        .map_err(|error| ListApiError::internal("failed to get public list entries", error))?;
+        .map_err(|error| ListApiError::internal("failed to get public default list", error))?
+        .ok_or_else(ListApiError::not_found)?;
+    let anime = list::get_default_anime(&state.db, &list_id)
+        .await
+        .map_err(|error| {
+            ListApiError::internal("failed to get public default list entries", error)
+        })?;
     Ok(Json(ListDetail {
         list: summary,
         anime,
@@ -207,7 +225,24 @@ pub async fn update_list(
     Path(list_id): Path<String>,
     Json(request): Json<UpdateListRequest>,
 ) -> ApiResult<Json<ListDetail>> {
-    reject_default(&list_id)?;
+    if list_id == DEFAULT_LIST_ID {
+        sqlx::query(
+            "UPDATE users SET default_list_visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ?",
+        )
+        .bind(request.visibility.as_str())
+        .bind(&user.id)
+        .execute(&state.db)
+        .await
+        .map_err(|error| ListApiError::internal("failed to update default list", error))?;
+        let anime = list::get_default_anime(&state.db, &user.id)
+            .await
+            .map_err(|error| ListApiError::internal("failed to get updated default list", error))?;
+        return Ok(Json(ListDetail {
+            list: ListSummary::default_list(request.visibility),
+            anime,
+        }));
+    }
+
     let name = list::validate_name(request.name).map_err(ListApiError::bad_request)?;
     require_owned_list(&state, &list_id, &user.id).await?;
 

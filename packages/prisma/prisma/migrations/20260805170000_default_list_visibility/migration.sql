@@ -1,0 +1,2 @@
+ALTER TABLE `users`
+    ADD COLUMN `default_list_visibility` ENUM('PRIVATE', 'UNLISTED', 'PUBLIC') NOT NULL DEFAULT 'PRIVATE';

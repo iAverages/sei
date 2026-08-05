@@ -23,7 +23,7 @@ impl ListVisibility {
         }
     }
 
-    fn from_db(value: &str) -> Result<Self, anyhow::Error> {
+    pub fn from_db(value: &str) -> Result<Self, anyhow::Error> {
         match value.to_ascii_uppercase().as_str() {
             "PRIVATE" => Ok(Self::Private),
             "UNLISTED" => Ok(Self::Unlisted),
@@ -43,11 +43,11 @@ pub struct ListSummary {
 }
 
 impl ListSummary {
-    pub fn default_list() -> Self {
+    pub fn default_list(visibility: ListVisibility) -> Self {
         Self {
             id: DEFAULT_LIST_ID.to_string(),
             name: "Default".to_string(),
-            visibility: ListVisibility::Private,
+            visibility,
             is_default: true,
         }
     }
@@ -129,6 +129,9 @@ pub async fn get_owned_lists(
     db: &Pool<MySql>,
     owner_id: &str,
 ) -> Result<Vec<ListSummary>, anyhow::Error> {
+    let default_list = get_default_summary(db, owner_id)
+        .await?
+        .ok_or_else(|| anyhow::anyhow!("default list owner not found"))?;
     let rows = sqlx::query_as::<_, ListRow>(
         "SELECT id, name, visibility FROM anime_lists WHERE owner_id = ? ORDER BY created_at, id",
     )
@@ -137,13 +140,42 @@ pub async fn get_owned_lists(
     .await?;
 
     let mut lists = Vec::with_capacity(rows.len() + 1);
-    lists.push(ListSummary::default_list());
+    lists.push(default_list);
     lists.extend(
         rows.into_iter()
             .map(ListSummary::try_from)
             .collect::<Result<Vec<_>, _>>()?,
     );
     Ok(lists)
+}
+
+pub async fn get_default_summary(
+    db: &Pool<MySql>,
+    owner_id: &str,
+) -> Result<Option<ListSummary>, anyhow::Error> {
+    let visibility: Option<String> =
+        sqlx::query_scalar("SELECT default_list_visibility FROM users WHERE id = ?")
+            .bind(owner_id)
+            .fetch_optional(db)
+            .await?;
+    visibility
+        .map(|visibility| ListVisibility::from_db(&visibility).map(ListSummary::default_list))
+        .transpose()
+}
+
+pub async fn get_public_default_summary(
+    db: &Pool<MySql>,
+    owner_id: &str,
+) -> Result<Option<ListSummary>, anyhow::Error> {
+    let visibility: Option<String> = sqlx::query_scalar(
+        "SELECT default_list_visibility FROM users WHERE id = ? AND default_list_visibility IN ('PUBLIC', 'UNLISTED')",
+    )
+    .bind(owner_id)
+    .fetch_optional(db)
+    .await?;
+    visibility
+        .map(|visibility| ListVisibility::from_db(&visibility).map(ListSummary::default_list))
+        .transpose()
 }
 
 pub async fn get_owned_summary(

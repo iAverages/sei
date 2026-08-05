@@ -50,6 +50,7 @@ function RouteComponent() {
 
 function ListPage(props: { detail: ListDetail }) {
     const router = useRouter();
+    const context = Route.useRouteContext();
     const listId = props.detail.list.id;
     const [anime, setAnime] = createSignal([...props.detail.anime]);
     const [baseline, setBaseline] = createSignal([...props.detail.anime]);
@@ -93,11 +94,9 @@ function ListPage(props: { detail: ListDetail }) {
             <BackToTop />
             <HeaderButtonsPortal>
                 <div class="ml-auto flex flex-wrap gap-2">
-                    <Show when={!props.detail.list.isDefault}>
-                        <Button variant="outline" disabled={hasReordered()} onClick={() => setEditOpen(true)}>
-                            Edit
-                        </Button>
-                    </Show>
+                    <Button variant="outline" disabled={hasReordered()} onClick={() => setEditOpen(true)}>
+                        Edit
+                    </Button>
                     <Button
                         disabled={!hasReordered()}
                         onClick={() => orderMutation.mutate(anime().map(({ id }) => id))}
@@ -150,31 +149,34 @@ function ListPage(props: { detail: ListDetail }) {
                 </DragDropProvider>
             </Show>
 
-            <Show when={!props.detail.list.isDefault}>
-                <Sheet open={editOpen()} onOpenChange={setEditOpen}>
-                    <SheetContent>
-                        <SheetHeader>
-                            <SheetTitle>Edit {props.detail.list.name}</SheetTitle>
-                            <SheetDescription>Update list details or add more anime.</SheetDescription>
-                        </SheetHeader>
-                        <Show when={editOpen()}>
-                            <ListForm
-                                initialName={props.detail.list.name}
-                                initialVisibility={props.detail.list.visibility}
-                                existingAnimeIds={props.detail.anime.map(({ id }) => id)}
-                                shareUrl={`/lists/${listId}`}
-                                submitLabel="Save changes"
-                                onSubmit={async ({ name, visibility, animeIds }) => {
-                                    await updateList(listId, { name, visibility });
-                                    if (animeIds.length > 0) await addListEntries(listId, animeIds);
-                                    setEditOpen(false);
-                                    await router.invalidate();
-                                }}
-                            />
-                        </Show>
-                    </SheetContent>
-                </Sheet>
-            </Show>
+            <Sheet open={editOpen()} onOpenChange={setEditOpen}>
+                <SheetContent>
+                    <SheetHeader>
+                        <SheetTitle>Edit {props.detail.list.name}</SheetTitle>
+                        <SheetDescription>
+                            {props.detail.list.isDefault
+                                ? "Choose who can view your default list."
+                                : "Update list details or add more anime."}
+                        </SheetDescription>
+                    </SheetHeader>
+                    <Show when={editOpen()}>
+                        <ListForm
+                            initialName={props.detail.list.name}
+                            initialVisibility={props.detail.list.visibility}
+                            existingAnimeIds={props.detail.anime.map(({ id }) => id)}
+                            shareUrl={`/lists/${props.detail.list.isDefault ? context().user.id : listId}`}
+                            visibilityOnly={props.detail.list.isDefault}
+                            submitLabel="Save changes"
+                            onSubmit={async ({ name, visibility, animeIds }) => {
+                                await updateList(listId, { name, visibility });
+                                if (animeIds.length > 0) await addListEntries(listId, animeIds);
+                                setEditOpen(false);
+                                await router.invalidate();
+                            }}
+                        />
+                    </Show>
+                </SheetContent>
+            </Sheet>
         </fieldset>
     );
 }

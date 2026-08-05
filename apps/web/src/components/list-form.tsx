@@ -14,6 +14,7 @@ export function ListForm(props: {
     initialVisibility?: ListVisibility;
     existingAnimeIds?: number[];
     shareUrl?: string;
+    visibilityOnly?: boolean;
     submitLabel: string;
     onSubmit: (value: ListFormValue) => Promise<void>;
 }) {
@@ -48,15 +49,17 @@ export function ListForm(props: {
 
     return (
         <form class="mt-6 flex flex-col gap-5" onSubmit={submit}>
-            <TextField
-                value={name()}
-                onChange={setName}
-                required
-                validationState={error() && !name().trim() ? "invalid" : "valid"}
-            >
-                <TextFieldLabel>List name</TextFieldLabel>
-                <TextFieldInput maxlength={100} placeholder="Weekend favorites" />
-            </TextField>
+            <Show when={!props.visibilityOnly}>
+                <TextField
+                    value={name()}
+                    onChange={setName}
+                    required
+                    validationState={error() && !name().trim() ? "invalid" : "valid"}
+                >
+                    <TextFieldLabel>List name</TextFieldLabel>
+                    <TextFieldInput maxlength={100} placeholder="Weekend favorites" />
+                </TextField>
+            </Show>
 
             <label class="flex flex-col gap-1 text-sm font-medium">
                 Visibility
@@ -81,12 +84,14 @@ export function ListForm(props: {
                 </Show>
             </label>
 
-            <AnimePicker
-                selected={selected()}
-                excludedIds={props.existingAnimeIds ?? []}
-                onSelect={(anime) => setSelected((current) => [...current, anime])}
-                onRemove={(animeId) => setSelected((current) => current.filter(({ id }) => id !== animeId))}
-            />
+            <Show when={!props.visibilityOnly}>
+                <AnimePicker
+                    selected={selected()}
+                    excludedIds={props.existingAnimeIds ?? []}
+                    onSelect={(anime) => setSelected((current) => [...current, anime])}
+                    onRemove={(animeId) => setSelected((current) => current.filter(({ id }) => id !== animeId))}
+                />
+            </Show>
 
             <Show when={error()}>
                 {(message) => (

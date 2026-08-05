@@ -7,16 +7,17 @@ datasource db {
 }
 
 model users {
-  id                String    @id @default(cuid())
-  name              String    @unique // set from mal
-  mal_id            Int       @unique
-  mal_access_token  String    @db.MediumText
-  mal_refresh_token String    @db.MediumText()
-  picture           String
-  created_at        DateTime  @default(now())
-  updated_at        DateTime  @default(now())
-  deleted_at        DateTime?
-  list_last_update  DateTime  @default(now())
+  id                      String         @id @default(cuid())
+  name                    String         @unique // set from mal
+  mal_id                  Int            @unique
+  mal_access_token        String         @db.MediumText
+  mal_refresh_token       String         @db.MediumText()
+  picture                 String
+  created_at              DateTime       @default(now())
+  updated_at              DateTime       @default(now())
+  deleted_at              DateTime?
+  list_last_update        DateTime       @default(now())
+  default_list_visibility ListVisibility @default(PRIVATE)
 
   sessions        sessions[]
   anime_users     anime_users[]
