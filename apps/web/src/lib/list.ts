@@ -77,6 +77,17 @@ export const fetchList = async () => {
     };
 };
 
+const importStatusSchema = z.object({
+    isImporting: z.boolean(),
+});
+
+export const fetchImportStatus = async () => {
+    const response = await api("/api/v1/user/import-status");
+    if (!response.ok) throw new Error("failed to fetch import status");
+
+    return importStatusSchema.parse(await response.json()).isImporting;
+};
+
 export type Anime = Awaited<ReturnType<typeof fetchList>>["anime"][number];
 
 export const updateListOrder = async (ids: number[]) => {

@@ -1,7 +1,7 @@
-import { createWindowVirtualizer } from "@tanstack/solid-virtual";
 import { makeEventListener } from "@solid-primitives/event-listener";
 import { useMutation } from "@tanstack/solid-query";
 import { createFileRoute } from "@tanstack/solid-router";
+import { createWindowVirtualizer } from "@tanstack/solid-virtual";
 import {
     closestCenter,
     DragDropProvider,
@@ -11,13 +11,11 @@ import {
     SortableProvider,
     useDragDropContext,
 } from "@thisbeyond/solid-dnd";
-import { type Accessor, batch, createEffect, createSignal, For, onMount, Show } from "solid-js";
+import { type Accessor, batch, createEffect, createSignal, For, onMount } from "solid-js";
 import { createStore } from "solid-js/store";
-import { Motion, Presence } from "solid-motionone";
 import { toast } from "solid-sonner";
 import { AnimeCard, DraggableAnimeCard } from "~/components/anime-card";
 import { BackToTop } from "~/components/back-to-top";
-import { Alert, AlertTitle } from "~/components/ui/alert";
 import {
     AlertDialog,
     AlertDialogContent,
@@ -29,19 +27,17 @@ import {
 } from "~/components/ui/alert-dialog";
 import { Button } from "~/components/ui/button";
 import { HeaderButtonsPortal } from "~/components/ui/sidebar/buttons-portal";
-import { type Anime, type AnimeListStatus, fetchList, updateListOrder } from "~/lib/list";
-import { useSseStream } from "~/lib/sse";
+import { type AnimeListStatus, fetchList, updateListOrder } from "~/lib/list";
 import { moveIndexToStart } from "~/lib/utils";
 
 export const Route = createFileRoute("/_app/$listId")({
     component: RouteComponent,
     ssr: false,
     loader: async () => {
-        const { anime, isImporting } = await fetchList();
+        const { anime } = await fetchList();
         return {
             crumb: "Default",
             anime,
-            isImporting,
         };
     },
 });
@@ -51,24 +47,11 @@ const useArrayStore = <TData, TId>(defaultValue: TData[], opts: { getId: (data: 
     // does not need to be reactive
     const [data, setData] = createStore(defaultValue);
     // ids is an array since we need the item ids as an array for the dnd components
-    // and do not want to recreate this every time an anime is added (during first import
-    // animes get added a lot this causes the page to become laggy for some time)
+    // and do not want to recreate it every time the data changes
     const [ids, setIds] = createStore(getIds(data));
     // however we want a fast lookup for animes we  have stored, we use a map which is
     // itemId -> index in storage for faster lookups
     const idsMap = new Map(ids.map((id, index) => [id, index]));
-
-    const append = (newData: TData) => {
-        replace([newData]);
-        return;
-        const id = opts.getId(newData);
-        if (idsMap.has(id)) return;
-        batch(() => {
-            setData(data.length, newData);
-            idsMap.set(id, data.length);
-            setIds(ids.length, id);
-        });
-    };
 
     const remove = (index: number) => {
         batch(() => {
@@ -101,9 +84,7 @@ const useArrayStore = <TData, TId>(defaultValue: TData[], opts: { getId: (data: 
 
     return {
         ids,
-        idsMap,
         data,
-        append,
         remove,
         replace,
     };
@@ -118,33 +99,13 @@ const getRemPixels = (rem: number) => {
 
 function RouteComponent() {
     const data = Route.useLoaderData();
-    const [isImporting, setIsImporting] = createSignal(data().isImporting);
     const [hasReordered, setHasReordered] = createSignal(false);
     let initalAnime = [...data().anime];
     const {
         data: animes,
         ids: animeIdsArray,
-        idsMap: animeIds,
-        append: addAnime,
         replace: setAnimes,
     } = useArrayStore([...data().anime], { getId: (data) => data.id });
-
-    type ListSseEvent = {
-        anime: Anime;
-    };
-    useSseStream<ListSseEvent>({
-        url: "/api/v1/user/list/sse",
-        onMessage: ({ anime }) => {
-            if (animeIds.has(anime.id)) {
-                console.log("anime already in list, skipping");
-                return;
-            }
-            console.log("got event", anime);
-            initalAnime[initalAnime.length - 1] = anime;
-            addAnime(anime);
-            // virtualizer.measure();
-        },
-    });
 
     // biome-ignore lint/style/useConst: used for ref to dom node
     let gridRef: HTMLDivElement = null!;
@@ -224,7 +185,7 @@ function RouteComponent() {
         >
             <BackToTop />
             <HeaderButtonsPortal>
-                <Motion.div initial={{ opacity: 0 }} animate={{ opacity: 1 }} transition={{ duration: 0.25 }}>
+                <div>
                     <div class="flex gap-2">
                         <Button
                             disabled={!hasReordered()}
@@ -234,27 +195,10 @@ function RouteComponent() {
                         </Button>
                         <ResetButton hasReordered={hasReordered} reset={() => setAnimes([...initalAnime])} />
                     </div>
-                </Motion.div>
+                </div>
             </HeaderButtonsPortal>
 
-            <Presence>
-                <Show when={isImporting()}>
-                    <Motion.div
-                        initial={{ opacity: 0, height: "0px" }}
-                        animate={{ opacity: 1, height: "auto" }}
-                        exit={{ opacity: 0, height: "0px" }}
-                        transition={{ duration: 0.25 }}
-                    >
-                        <Alert variant={"destructive"}>
-                            <AlertTitle>
-                                Some animes in this list are still being imported. They should automatically appear once
-                                complete.
-                            </AlertTitle>
-                        </Alert>
-                    </Motion.div>
-                </Show>
-            </Presence>
-            <Motion.div initial={{ opacity: 0, y: 50 }} animate={{ opacity: 1, y: 0 }} transition={{ duration: 0.25 }}>
+            <div>
                 <DragDropProvider onDragEnd={onDragEnd} collisionDetector={closestCenter}>
                     <ScrollDragFix />
                     <DragDropSensors />
@@ -307,7 +251,7 @@ function RouteComponent() {
                         }}
                     </DragOverlay>
                 </DragDropProvider>
-            </Motion.div>
+            </div>
         </fieldset>
     );
 }

@@ -28,6 +28,25 @@ pub async fn get_user(Extension(user): Extension<DBUser>) -> impl IntoResponse {
     json_response!(StatusCode::OK, safe_user)
 }
 
+#[axum::debug_handler]
+pub async fn get_import_status(
+    State(state): State<AppState>,
+    Extension(user): Extension<DBUser>,
+) -> impl IntoResponse {
+    match is_user_importing(&state.db, &user.id).await {
+        Ok(is_importing) => json_response!(StatusCode::OK, { "isImporting": is_importing }),
+        Err(error) => {
+            tracing::error!(
+                error = error.to_string(),
+                "failed to get user import status"
+            );
+            json_response!(StatusCode::INTERNAL_SERVER_ERROR, {
+                "message": "Failed to get import status"
+            })
+        }
+    }
+}
+
 #[derive(Serialize)]
 struct SingleEntry {
     anime_id: u32,
@@ -64,7 +83,7 @@ pub async fn get_list(
         .await
         .unwrap();
     let anime_relations = get_anime_relations(&state.db, &anime_ids).await.unwrap();
-    let importing = is_user_importing(&state.db, &user_id).await;
+    let importing = is_user_importing(&state.db, &user_id).await.unwrap_or(true);
 
     json_response!(StatusCode::OK, {
         "animes": animes,

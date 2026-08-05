@@ -129,15 +129,12 @@ impl From<DBUser> for SafeUser {
     }
 }
 
-pub async fn is_user_importing(db: &Pool<MySql>, user_id: &str) -> bool {
+pub async fn is_user_importing(db: &Pool<MySql>, user_id: &str) -> Result<bool, sqlx::Error> {
     let result = sqlx::query_file!("database/queries/is_user_importing.sql", user_id)
         .fetch_one(db)
-        .await;
+        .await?;
 
-    match result {
-        Ok(res) => res.importing_count > 0,
-        Err(_) => false,
-    }
+    Ok(result.importing_count > 0)
 }
 
 pub struct AnimeListEntry {

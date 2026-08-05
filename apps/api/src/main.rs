@@ -114,6 +114,7 @@ async fn main() {
             Router::new()
                 .route("/test", get(test))
                 .route("/auth/me", get(routes::user::get_user))
+                .route("/user/import-status", get(routes::user::get_import_status))
                 .route("/user/list", get(routes::user::get_list))
                 .route("/user/list", post(routes::user::update_list_order))
                 .route("/user/list/sse", get(routes::user::join_sse))
