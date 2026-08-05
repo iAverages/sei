@@ -7,6 +7,7 @@ export const listSummarySchema = z
     .object({
         id: z.string(),
         name: z.string(),
+        slug: z.string(),
         visibility: listVisibilitySchema,
         isDefault: z.boolean(),
     })

@@ -7,10 +7,12 @@ use sqlx::{MySql, Pool};
 use crate::auth::session::Session;
 use crate::database::models::AnimeUsers;
 use crate::mal::get_mal_user_list;
+use crate::models::list;
 use crate::AppState;
 
 pub async fn create_user(app_state: AppState, user: CreateUser) -> DBUser {
     let id = cuid::cuid2();
+    let username = user.name.clone();
     let res = sqlx::query!(
         "INSERT INTO users
         (id,name,picture, mal_id, mal_access_token, mal_refresh_token)
@@ -26,23 +28,30 @@ pub async fn create_user(app_state: AppState, user: CreateUser) -> DBUser {
     .await
     .expect("Failed to create user");
 
+    list::reassign_conflicting_slug(&app_state.db, &username)
+        .await
+        .expect("Failed to reserve username slug");
+
     let id = res.last_insert_id();
 
-    sqlx::query_as!(DBUser, "SELECT * FROM users WHERE id = ?", id)
-        .fetch_one(&app_state.db)
-        .await
-        .expect("Failed to find user")
+    sqlx::query_as::<_, DBUser>(
+        "SELECT id, name, picture, mal_id, mal_access_token, mal_refresh_token, list_last_update, created_at, updated_at, deleted_at FROM users WHERE id = ?",
+    )
+    .bind(id)
+    .fetch_one(&app_state.db)
+    .await
+    .expect("Failed to find user")
 }
 
 pub async fn find_user_mal_id(state: AppState, mal_id: i32) -> Option<DBUser> {
-    let user = sqlx::query_as!(DBUser, "SELECT *  FROM users WHERE mal_id = ?", mal_id)
-        .fetch_one(&state.db)
-        .await;
+    let user = sqlx::query_as::<_, DBUser>(
+        "SELECT id, name, picture, mal_id, mal_access_token, mal_refresh_token, list_last_update, created_at, updated_at, deleted_at FROM users WHERE mal_id = ?",
+    )
+    .bind(mal_id)
+    .fetch_one(&state.db)
+    .await;
 
-    match user {
-        Ok(user) => Some(user),
-        Err(_) => None,
-    }
+    user.ok()
 }
 
 pub async fn get_user_by_session(state: AppState, session_id: String) -> Option<DBUser> {
@@ -51,7 +60,10 @@ pub async fn get_user_by_session(state: AppState, session_id: String) -> Option<
         .await
         .ok()?;
 
-    sqlx::query_as!(DBUser, "SELECT * FROM users WHERE id = ?", session.user_id)
+    sqlx::query_as::<_, DBUser>(
+        "SELECT id, name, picture, mal_id, mal_access_token, mal_refresh_token, list_last_update, created_at, updated_at, deleted_at FROM users WHERE id = ?",
+    )
+    .bind(session.user_id)
         .fetch_one(&state.db)
         .await
         .ok()
@@ -87,7 +99,7 @@ pub struct CreateUser {
     pub mal_refresh_token: String,
 }
 
-#[derive(Deserialize, Serialize, Clone)]
+#[derive(Deserialize, Serialize, Clone, sqlx::FromRow)]
 pub struct DBUser {
     pub id: String,
     pub name: String,

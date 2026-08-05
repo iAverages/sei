@@ -38,15 +38,17 @@ impl ListVisibility {
 pub struct ListSummary {
     pub id: String,
     pub name: String,
+    pub slug: String,
     pub visibility: ListVisibility,
     pub is_default: bool,
 }
 
 impl ListSummary {
-    pub fn default_list(visibility: ListVisibility) -> Self {
+    pub fn default_list(visibility: ListVisibility, username: String) -> Self {
         Self {
             id: DEFAULT_LIST_ID.to_string(),
             name: "Default".to_string(),
+            slug: username,
             visibility,
             is_default: true,
         }
@@ -75,6 +77,7 @@ pub struct ListDetail {
 struct ListRow {
     id: String,
     name: String,
+    slug: String,
     visibility: String,
 }
 
@@ -85,6 +88,7 @@ impl TryFrom<ListRow> for ListSummary {
         Ok(Self {
             id: row.id,
             name: row.name,
+            slug: row.slug,
             visibility: ListVisibility::from_db(&row.visibility)?,
             is_default: false,
         })
@@ -100,6 +104,87 @@ pub fn validate_name(name: String) -> Result<String, &'static str> {
         return Err("List name must be at most 100 characters");
     }
     Ok(name)
+}
+
+pub fn slugify(name: &str) -> String {
+    let mut slug = String::with_capacity(name.len());
+    let mut separator = false;
+    for character in name.chars() {
+        if character.is_ascii_alphanumeric() {
+            if separator && !slug.is_empty() {
+                slug.push('-');
+            }
+            slug.push(character.to_ascii_lowercase());
+            separator = false;
+        } else if character.is_ascii_whitespace() || character == '-' || character == '_' {
+            separator = true;
+        }
+    }
+    if slug.is_empty() {
+        "list".to_string()
+    } else {
+        slug
+    }
+}
+
+pub async fn generate_slug(
+    transaction: &mut Transaction<'_, MySql>,
+    name: &str,
+    excluded_list_id: Option<&str>,
+) -> Result<String, anyhow::Error> {
+    let base = slugify(name);
+    let mut number = 1;
+    loop {
+        let candidate = if number == 1 {
+            base.clone()
+        } else {
+            format!("{base}-{number}")
+        };
+        let exists: i8 = if let Some(excluded_list_id) = excluded_list_id {
+            sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?) OR EXISTS(SELECT 1 FROM anime_lists WHERE slug = ? AND id <> ?)",
+            )
+            .bind(&candidate)
+            .bind(&candidate)
+            .bind(excluded_list_id)
+            .fetch_one(&mut **transaction)
+            .await?
+        } else {
+            sqlx::query_scalar(
+                "SELECT EXISTS(SELECT 1 FROM users WHERE name = ?) OR EXISTS(SELECT 1 FROM anime_lists WHERE slug = ?)",
+            )
+            .bind(&candidate)
+            .bind(&candidate)
+            .fetch_one(&mut **transaction)
+            .await?
+        };
+        if exists == 0 {
+            return Ok(candidate);
+        }
+        number += 1;
+    }
+}
+
+pub async fn reassign_conflicting_slug(
+    db: &Pool<MySql>,
+    username: &str,
+) -> Result<(), anyhow::Error> {
+    let mut transaction = db.begin().await?;
+    let conflicting: Option<(String, String)> =
+        sqlx::query_as("SELECT id, name FROM anime_lists WHERE slug = ? FOR UPDATE")
+            .bind(username)
+            .fetch_optional(&mut *transaction)
+            .await?;
+    if let Some((list_id, name)) = conflicting {
+        let slug = generate_slug(&mut transaction, &name, Some(&list_id)).await?;
+        sqlx::query("UPDATE anime_lists SET slug = ? WHERE id = ?")
+            .bind(slug)
+            .bind(list_id)
+            .execute(&mut *transaction)
+            .await?;
+    }
+    transaction.commit().await?;
+    Ok(())
 }
 
 pub fn unique_anime_ids(ids: Vec<i32>) -> Result<Vec<i32>, &'static str> {
@@ -133,7 +218,7 @@ pub async fn get_owned_lists(
         .await?
         .ok_or_else(|| anyhow::anyhow!("default list owner not found"))?;
     let rows = sqlx::query_as::<_, ListRow>(
-        "SELECT id, name, visibility FROM anime_lists WHERE owner_id = ? ORDER BY created_at, id",
+        "SELECT id, name, slug, visibility FROM anime_lists WHERE owner_id = ? ORDER BY created_at, id",
     )
     .bind(owner_id)
     .fetch_all(db)
@@ -153,29 +238,36 @@ pub async fn get_default_summary(
     db: &Pool<MySql>,
     owner_id: &str,
 ) -> Result<Option<ListSummary>, anyhow::Error> {
-    let visibility: Option<String> =
-        sqlx::query_scalar("SELECT default_list_visibility FROM users WHERE id = ?")
+    let row: Option<(String, String)> =
+        sqlx::query_as("SELECT name, default_list_visibility FROM users WHERE id = ?")
             .bind(owner_id)
             .fetch_optional(db)
             .await?;
-    visibility
-        .map(|visibility| ListVisibility::from_db(&visibility).map(ListSummary::default_list))
-        .transpose()
+    row.map(|(username, visibility)| {
+        ListVisibility::from_db(&visibility)
+            .map(|visibility| ListSummary::default_list(visibility, username))
+    })
+    .transpose()
 }
 
 pub async fn get_public_default_summary(
     db: &Pool<MySql>,
-    owner_id: &str,
-) -> Result<Option<ListSummary>, anyhow::Error> {
-    let visibility: Option<String> = sqlx::query_scalar(
-        "SELECT default_list_visibility FROM users WHERE id = ? AND default_list_visibility IN ('PUBLIC', 'UNLISTED')",
+    username: &str,
+) -> Result<Option<(ListSummary, String)>, anyhow::Error> {
+    let row: Option<(String, String, String)> = sqlx::query_as(
+        "SELECT id, name, default_list_visibility FROM users WHERE name = ? AND default_list_visibility IN ('PUBLIC', 'UNLISTED')",
     )
-    .bind(owner_id)
+    .bind(username)
     .fetch_optional(db)
     .await?;
-    visibility
-        .map(|visibility| ListVisibility::from_db(&visibility).map(ListSummary::default_list))
-        .transpose()
+    row.map(|(owner_id, username, visibility)| {
+        ListVisibility::from_db(&visibility).map(|visibility| {
+            let mut summary = ListSummary::default_list(visibility, username);
+            summary.name = format!("{}'s List", summary.slug);
+            (summary, owner_id)
+        })
+    })
+    .transpose()
 }
 
 pub async fn get_owned_summary(
@@ -184,7 +276,7 @@ pub async fn get_owned_summary(
     owner_id: &str,
 ) -> Result<Option<ListSummary>, anyhow::Error> {
     let row = sqlx::query_as::<_, ListRow>(
-        "SELECT id, name, visibility FROM anime_lists WHERE id = ? AND owner_id = ?",
+        "SELECT id, name, slug, visibility FROM anime_lists WHERE id = ? AND owner_id = ?",
     )
     .bind(list_id)
     .bind(owner_id)
@@ -195,12 +287,12 @@ pub async fn get_owned_summary(
 
 pub async fn get_public_summary(
     db: &Pool<MySql>,
-    list_id: &str,
+    slug: &str,
 ) -> Result<Option<ListSummary>, anyhow::Error> {
     let row = sqlx::query_as::<_, ListRow>(
-        "SELECT id, name, visibility FROM anime_lists WHERE id = ? AND visibility IN ('PUBLIC', 'UNLISTED')",
+        "SELECT id, name, slug, visibility FROM anime_lists WHERE slug = ? AND visibility IN ('PUBLIC', 'UNLISTED')",
     )
-    .bind(list_id)
+    .bind(slug)
     .fetch_optional(db)
     .await?;
     row.map(ListSummary::try_from).transpose()
@@ -395,4 +487,24 @@ pub async fn search_hydrated_anime(
     .fetch_all(db)
     .await
     .map_err(Into::into)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::slugify;
+
+    #[test]
+    fn slugifies_list_names() {
+        assert_eq!(slugify("  Weekend Favorites!  "), "weekend-favorites");
+    }
+
+    #[test]
+    fn removes_non_ascii_and_special_characters() {
+        assert_eq!(slugify("Pokémon: 90's"), "pokmon-90s");
+    }
+
+    #[test]
+    fn uses_list_when_name_has_no_slug_characters() {
+        assert_eq!(slugify("日本語"), "list");
+    }
 }

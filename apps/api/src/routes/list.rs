@@ -137,30 +137,30 @@ pub async fn get_list(
 
 pub async fn get_public_list(
     State(state): State<AppState>,
-    Path(list_id): Path<String>,
+    Path(slug): Path<String>,
 ) -> ApiResult<Json<ListDetail>> {
-    if let Some(summary) = list::get_public_summary(&state.db, &list_id)
+    if let Some((summary, owner_id)) = list::get_public_default_summary(&state.db, &slug)
         .await
-        .map_err(|error| ListApiError::internal("failed to get public list", error))?
+        .map_err(|error| ListApiError::internal("failed to get public default list", error))?
     {
-        let anime = list::get_custom_anime(&state.db, &list_id)
+        let anime = list::get_default_anime(&state.db, &owner_id)
             .await
-            .map_err(|error| ListApiError::internal("failed to get public list entries", error))?;
+            .map_err(|error| {
+                ListApiError::internal("failed to get public default list entries", error)
+            })?;
         return Ok(Json(ListDetail {
             list: summary,
             anime,
         }));
     }
 
-    let summary = list::get_public_default_summary(&state.db, &list_id)
+    let summary = list::get_public_summary(&state.db, &slug)
         .await
-        .map_err(|error| ListApiError::internal("failed to get public default list", error))?
+        .map_err(|error| ListApiError::internal("failed to get public list", error))?
         .ok_or_else(ListApiError::not_found)?;
-    let anime = list::get_default_anime(&state.db, &list_id)
+    let anime = list::get_custom_anime(&state.db, &summary.id)
         .await
-        .map_err(|error| {
-            ListApiError::internal("failed to get public default list entries", error)
-        })?;
+        .map_err(|error| ListApiError::internal("failed to get public list entries", error))?;
     Ok(Json(ListDetail {
         list: summary,
         anime,
@@ -189,14 +189,20 @@ pub async fn create_list(
         .begin()
         .await
         .map_err(|error| ListApiError::internal("failed to start list creation", error))?;
-    sqlx::query("INSERT INTO anime_lists (id, owner_id, name, visibility) VALUES (?, ?, ?, ?)")
-        .bind(&id)
-        .bind(&user.id)
-        .bind(&name)
-        .bind(request.visibility.as_str())
-        .execute(&mut *transaction)
+    let slug = list::generate_slug(&mut transaction, &name, None)
         .await
-        .map_err(|error| ListApiError::internal("failed to create list", error))?;
+        .map_err(|error| ListApiError::internal("failed to generate list slug", error))?;
+    sqlx::query(
+        "INSERT INTO anime_lists (id, owner_id, name, slug, visibility) VALUES (?, ?, ?, ?, ?)",
+    )
+    .bind(&id)
+    .bind(&user.id)
+    .bind(&name)
+    .bind(&slug)
+    .bind(request.visibility.as_str())
+    .execute(&mut *transaction)
+    .await
+    .map_err(|error| ListApiError::internal("failed to create list", error))?;
     list::insert_entries(&mut transaction, &id, &ids, 0)
         .await
         .map_err(|error| ListApiError::internal("failed to create list entries", error))?;
@@ -211,6 +217,7 @@ pub async fn create_list(
             list: ListSummary {
                 id,
                 name,
+                slug,
                 visibility: request.visibility,
                 is_default: false,
             },
@@ -238,24 +245,36 @@ pub async fn update_list(
             .await
             .map_err(|error| ListApiError::internal("failed to get updated default list", error))?;
         return Ok(Json(ListDetail {
-            list: ListSummary::default_list(request.visibility),
+            list: ListSummary::default_list(request.visibility, user.name),
             anime,
         }));
     }
 
     let name = list::validate_name(request.name).map_err(ListApiError::bad_request)?;
-    require_owned_list(&state, &list_id, &user.id).await?;
-
+    let mut transaction = state
+        .db
+        .begin()
+        .await
+        .map_err(|error| ListApiError::internal("failed to start list update", error))?;
+    owned_list_in_transaction(&mut transaction, &list_id, &user.id).await?;
+    let slug = list::generate_slug(&mut transaction, &name, Some(&list_id))
+        .await
+        .map_err(|error| ListApiError::internal("failed to generate list slug", error))?;
     sqlx::query(
-        "UPDATE anime_lists SET name = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_id = ?",
+        "UPDATE anime_lists SET name = ?, slug = ?, visibility = ?, updated_at = CURRENT_TIMESTAMP WHERE id = ? AND owner_id = ?",
     )
     .bind(&name)
+    .bind(&slug)
     .bind(request.visibility.as_str())
     .bind(&list_id)
     .bind(&user.id)
-    .execute(&state.db)
+    .execute(&mut *transaction)
     .await
     .map_err(|error| ListApiError::internal("failed to update list", error))?;
+    transaction
+        .commit()
+        .await
+        .map_err(|error| ListApiError::internal("failed to commit list update", error))?;
     let anime = list::get_custom_anime(&state.db, &list_id)
         .await
         .map_err(|error| ListApiError::internal("failed to get updated list", error))?;
@@ -263,6 +282,7 @@ pub async fn update_list(
         list: ListSummary {
             id: list_id,
             name,
+            slug,
             visibility: request.visibility,
             is_default: false,
         },
@@ -434,15 +454,15 @@ async fn owned_list_in_transaction(
     list_id: &str,
     owner_id: &str,
 ) -> ApiResult<ListSummary> {
-    let row: Option<(String, String, String)> = sqlx::query_as(
-        "SELECT id, name, visibility FROM anime_lists WHERE id = ? AND owner_id = ? FOR UPDATE",
+    let row: Option<(String, String, String, String)> = sqlx::query_as(
+        "SELECT id, name, slug, visibility FROM anime_lists WHERE id = ? AND owner_id = ? FOR UPDATE",
     )
     .bind(list_id)
     .bind(owner_id)
     .fetch_optional(&mut **transaction)
     .await
     .map_err(|error| ListApiError::internal("failed to lock owned list", error))?;
-    let (id, name, visibility) = row.ok_or_else(ListApiError::not_found)?;
+    let (id, name, slug, visibility) = row.ok_or_else(ListApiError::not_found)?;
     let visibility = match visibility.to_ascii_uppercase().as_str() {
         "PRIVATE" => ListVisibility::Private,
         "UNLISTED" => ListVisibility::Unlisted,
@@ -457,6 +477,7 @@ async fn owned_list_in_transaction(
     Ok(ListSummary {
         id,
         name,
+        slug,
         visibility,
         is_default: false,
     })

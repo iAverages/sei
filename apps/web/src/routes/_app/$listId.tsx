@@ -50,7 +50,6 @@ function RouteComponent() {
 
 function ListPage(props: { detail: ListDetail }) {
     const router = useRouter();
-    const context = Route.useRouteContext();
     const listId = props.detail.list.id;
     const [anime, setAnime] = createSignal([...props.detail.anime]);
     const [baseline, setBaseline] = createSignal([...props.detail.anime]);
@@ -164,7 +163,7 @@ function ListPage(props: { detail: ListDetail }) {
                             initialName={props.detail.list.name}
                             initialVisibility={props.detail.list.visibility}
                             existingAnimeIds={props.detail.anime.map(({ id }) => id)}
-                            shareUrl={`/lists/${props.detail.list.isDefault ? context().user.id : listId}`}
+                            shareUrl={`/lists/${props.detail.list.slug}`}
                             visibilityOnly={props.detail.list.isDefault}
                             submitLabel="Save changes"
                             onSubmit={async ({ name, visibility, animeIds }) => {

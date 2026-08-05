@@ -70,6 +70,7 @@ model anime_lists {
   id         String         @id @default(cuid())
   owner_id   String
   name       String         @db.VarChar(100)
+  slug       String         @unique @db.VarChar(120)
   visibility ListVisibility @default(PRIVATE)
   created_at DateTime       @default(now())
   updated_at DateTime       @default(now()) @updatedAt
