@@ -19,4 +19,9 @@ export const fetchUser = async () => {
     return null;
 };
 
+export const logout = async () => {
+    const response = await api("/api/v1/auth/logout", { method: "DELETE" });
+    if (!response.ok) throw new Error("Failed to log out");
+};
+
 export type User = z.infer<typeof userSchema>;

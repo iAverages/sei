@@ -1,18 +1,21 @@
-import { Link } from "@tanstack/solid-router";
+import { useNavigate, useRouter } from "@tanstack/solid-router";
+import { toast } from "solid-sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import {
     DropdownMenu,
     DropdownMenuContent,
-    DropdownMenuGroup,
     DropdownMenuItem,
     DropdownMenuLabel,
     DropdownMenuSeparator,
     DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "~/components/ui/sidebar";
-import type { User } from "~/lib/user";
+import { logout, type User } from "~/lib/user";
 
 export function NavUser({ user }: { user: User }) {
+    const navigate = useNavigate();
+    const router = useRouter();
+
     return (
         <SidebarMenu>
             <SidebarMenuItem>
@@ -52,7 +55,17 @@ export function NavUser({ user }: { user: User }) {
                         {/*     <DropdownMenuItem>Notifications</DropdownMenuItem> */}
                         {/* </DropdownMenuGroup> */}
                         <DropdownMenuSeparator />
-                        <DropdownMenuItem as={Link} to="/logout">
+                        <DropdownMenuItem
+                            onClick={async () => {
+                                try {
+                                    await logout();
+                                    await navigate({ to: "/login" });
+                                    await router.invalidate({ sync: true });
+                                } catch (error) {
+                                    toast.error(error instanceof Error ? error.message : "Failed to log out");
+                                }
+                            }}
+                        >
                             Log out
                         </DropdownMenuItem>
                     </DropdownMenuContent>

@@ -1,5 +1,6 @@
 use axum::{
     extract::{Query, State},
+    http::StatusCode,
     response::{IntoResponse, Redirect},
     Extension,
 };
@@ -122,4 +123,20 @@ pub async fn handle_mal_callback(
     // TODO: setup auto in popup again
     // let html = Html::from("<html><script>window.close()</script></html>");
     // (updated_jar, html)
+}
+
+pub async fn logout(State(state): State<AppState>, jar: CookieJar) -> impl IntoResponse {
+    if let Some(token) = jar.get("token") {
+        if let Err(error) = sqlx::query("DELETE FROM sessions WHERE id = ?")
+            .bind(token.value())
+            .execute(&state.db)
+            .await
+        {
+            tracing::error!(error = %error, "failed to delete session");
+            return (jar, StatusCode::INTERNAL_SERVER_ERROR);
+        }
+    }
+
+    let expired_jar = jar.remove(Cookie::build("token").path("/").build());
+    (expired_jar, StatusCode::NO_CONTENT)
 }
