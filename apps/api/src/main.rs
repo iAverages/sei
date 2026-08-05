@@ -32,6 +32,8 @@ use crate::{auth::oauth::create_oauth_client, importer::Importer, middleware::au
 
 use self::models::anime::FullAnime;
 
+include!(concat!(env!("OUT_DIR"), "/migrations.rs"));
+
 #[derive(Clone, Debug, Serialize, Deserialize)]
 struct ImportEvent {
     user_id: String,
@@ -94,6 +96,11 @@ async fn main() {
         .connect(&db_url)
         .await
         .expect("Failed to connect to database");
+
+    MIGRATOR
+        .run(&db_pool)
+        .await
+        .expect("Failed to apply database migrations");
 
     let (tx, _rx) = broadcast::channel(256);
     let reqwest = Client::new();
