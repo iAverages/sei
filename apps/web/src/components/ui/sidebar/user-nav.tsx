@@ -1,4 +1,5 @@
 import { useNavigate, useRouter } from "@tanstack/solid-router";
+import { createSignal } from "solid-js";
 import { toast } from "solid-sonner";
 import { Avatar, AvatarFallback, AvatarImage } from "~/components/ui/avatar";
 import {
@@ -10,11 +11,12 @@ import {
     DropdownMenuTrigger,
 } from "~/components/ui/dropdown-menu";
 import { SidebarMenu, SidebarMenuButton, SidebarMenuItem } from "~/components/ui/sidebar";
-import { logout, type User } from "~/lib/user";
+import { logout, refreshMalAnime, type User } from "~/lib/user";
 
 export function NavUser({ user }: { user: User }) {
     const navigate = useNavigate();
     const router = useRouter();
+    const [refreshing, setRefreshing] = createSignal(false);
 
     return (
         <SidebarMenu>
@@ -47,13 +49,26 @@ export function NavUser({ user }: { user: User }) {
                                 </div>
                             </div>
                         </DropdownMenuLabel>
-                        {/* TODO */}
-                        {/* <DropdownMenuSeparator /> */}
-                        {/* <DropdownMenuGroup> */}
-                        {/*     <DropdownMenuItem>Account</DropdownMenuItem> */}
-                        {/*     <DropdownMenuItem>Billing</DropdownMenuItem> */}
-                        {/*     <DropdownMenuItem>Notifications</DropdownMenuItem> */}
-                        {/* </DropdownMenuGroup> */}
+                        <DropdownMenuSeparator />
+                        <DropdownMenuItem
+                            disabled={refreshing()}
+                            onClick={async () => {
+                                setRefreshing(true);
+                                try {
+                                    await refreshMalAnime();
+                                    await router.invalidate({ sync: true });
+                                    toast.success("MAL anime list refreshed");
+                                } catch (error) {
+                                    toast.error(
+                                        error instanceof Error ? error.message : "Failed to refresh MAL anime list",
+                                    );
+                                } finally {
+                                    setRefreshing(false);
+                                }
+                            }}
+                        >
+                            Refresh MAL anime
+                        </DropdownMenuItem>
                         <DropdownMenuSeparator />
                         <DropdownMenuItem
                             onClick={async () => {

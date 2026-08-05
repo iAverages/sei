@@ -106,7 +106,7 @@ pub async fn get_list(
             let state = state.clone();
             let user = user.clone();
             tokio::spawn(async move {
-                update_list_entries_mal(state, user).await;
+                let _ = update_list_entries_mal(state, user).await;
             });
         }
 

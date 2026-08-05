@@ -24,4 +24,10 @@ export const logout = async () => {
     if (!response.ok) throw new Error("Failed to log out");
 };
 
+export const refreshMalAnime = async () => {
+    const response = await api("/api/v1/user/list/refresh", { method: "POST" });
+    const body = (await response.json().catch(() => null)) as { message?: string } | null;
+    if (!response.ok) throw new Error(body?.message ?? "Failed to refresh MAL anime list");
+};
+
 export type User = z.infer<typeof userSchema>;

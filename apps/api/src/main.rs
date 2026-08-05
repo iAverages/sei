@@ -9,6 +9,7 @@ mod middleware;
 mod models;
 mod routes;
 use std::fmt::{self, Display, Formatter};
+use std::time::Duration;
 
 use axum::{
     extract::{FromRef, State},
@@ -48,6 +49,7 @@ pub struct AppState {
     reqwest: Client,
     importer: Importer,
     tx: broadcast::Sender<ImportEvent>,
+    mal_refresh_limiter: routes::user::MalRefreshLimiter,
 }
 
 impl FromRef<AppState> for Key {
@@ -112,6 +114,7 @@ async fn main() {
         reqwest,
         importer: importer.clone(),
         tx,
+        mal_refresh_limiter: routes::user::MalRefreshLimiter::new(3, Duration::from_secs(60)),
     };
 
     importer.start();
@@ -125,6 +128,7 @@ async fn main() {
         .route("/user/import-status", get(routes::user::get_import_status))
         .route("/user/list", get(routes::user::get_list))
         .route("/user/list", post(routes::user::update_list_order))
+        .route("/user/list/refresh", post(routes::user::refresh_mal_list))
         .route("/user/list/sse", get(routes::user::join_sse))
         .route("/lists", get(routes::list::get_lists))
         .route("/lists", post(routes::list::create_list))

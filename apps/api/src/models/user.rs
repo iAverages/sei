@@ -197,25 +197,16 @@ pub async fn add_to_list(db: &Pool<MySql>, user_id: &str, add_entries: Vec<Anime
     };
 }
 
-pub async fn update_list_entries_mal(state: AppState, user: DBUser) {
+pub async fn update_list_entries_mal(state: AppState, user: DBUser) -> Result<(), anyhow::Error> {
     let user_id = user.id.clone();
-    let response = get_mal_user_list(state.reqwest, user).await;
-    if let Err(error) = response {
-        tracing::error!(
-            error = error.to_string(),
-            "failed to fetch mal list for user"
-        );
-        return;
-    }
-
-    let animes = response.unwrap();
-    let _ = state
+    let animes = get_mal_user_list(state.reqwest, user).await?;
+    state
         .importer
         .add_items(
             animes.data.iter().map(|anime| anime.node.id).collect(),
             Some(&user_id),
         )
-        .await;
+        .await?;
 
     add_to_list(
         &state.db,
@@ -232,15 +223,10 @@ pub async fn update_list_entries_mal(state: AppState, user: DBUser) {
     )
     .await;
 
-    if let Err(error) =
-        sqlx::query("UPDATE users SET list_last_update = CURRENT_TIMESTAMP WHERE id = ?")
-            .bind(&user_id)
-            .execute(&state.db)
-            .await
-    {
-        tracing::error!(
-            error = error.to_string(),
-            "failed to update MAL list sync time"
-        );
-    }
+    sqlx::query("UPDATE users SET list_last_update = CURRENT_TIMESTAMP WHERE id = ?")
+        .bind(&user_id)
+        .execute(&state.db)
+        .await?;
+
+    Ok(())
 }
