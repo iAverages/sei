@@ -48,7 +48,7 @@ export function ListForm(props: {
     };
 
     return (
-        <form class="mt-6 flex flex-col gap-5" onSubmit={submit}>
+        <form class="mt-6 flex min-w-0 flex-col gap-5" onSubmit={submit}>
             <Show when={!props.visibilityOnly}>
                 <TextField
                     value={name()}
@@ -151,7 +151,7 @@ function AnimePicker(props: {
     const unavailableIds = () => new Set([...props.excludedIds, ...props.selected.map(({ id }) => id)]);
 
     return (
-        <section class="flex flex-col gap-3" aria-labelledby="anime-picker-label">
+        <section class="flex min-w-0 flex-col gap-3" aria-labelledby="anime-picker-label">
             <TextField value={query()} onChange={(value) => setQuery(value.slice(0, 30))}>
                 <TextFieldLabel id="anime-picker-label">Add anime</TextFieldLabel>
                 <TextFieldInput type="search" placeholder="Search local anime" maxlength={30} />
@@ -160,15 +160,18 @@ function AnimePicker(props: {
                 <ul class="flex flex-wrap gap-2" aria-label="Selected anime">
                     <For each={props.selected}>
                         {(anime) => (
-                            <li>
+                            <li class="min-w-0 max-w-full">
                                 <Button
                                     type="button"
                                     size="sm"
                                     variant="secondary"
+                                    class="max-w-full"
                                     onClick={() => props.onRemove(anime.id)}
                                 >
-                                    {anime.englishTitle ?? anime.romajiTitle}
-                                    <span aria-hidden="true">×</span>
+                                    <span class="min-w-0 truncate">{anime.englishTitle ?? anime.romajiTitle}</span>
+                                    <span class="shrink-0" aria-hidden="true">
+                                        ×
+                                    </span>
                                     <span class="sr-only">Remove</span>
                                 </Button>
                             </li>
@@ -194,7 +197,7 @@ function AnimePicker(props: {
                             {(anime) => (
                                 <button
                                     type="button"
-                                    class="flex w-full items-center gap-3 border-b border-border p-2 text-left last:border-0 hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
+                                    class="flex min-w-0 w-full items-center gap-3 border-b border-border p-2 text-left last:border-0 hover:bg-accent focus-visible:outline-hidden focus-visible:ring-2 focus-visible:ring-inset focus-visible:ring-ring"
                                     onClick={() => props.onSelect(anime)}
                                 >
                                     <Show when={anime.picture}>
@@ -202,7 +205,7 @@ function AnimePicker(props: {
                                             <img src={picture()} alt="" class="h-12 w-9 rounded object-cover" />
                                         )}
                                     </Show>
-                                    <span class="min-w-0">
+                                    <span class="min-w-0 flex-1">
                                         <span class="block truncate text-sm font-medium">
                                             {anime.englishTitle ?? anime.romajiTitle}
                                         </span>

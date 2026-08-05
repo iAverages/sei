@@ -1,7 +1,7 @@
 import { Link, useNavigate, useRouter } from "@tanstack/solid-router";
 import { createSignal, For, Show } from "solid-js";
 import { ListForm } from "~/components/list-form";
-import { Sheet, SheetContent, SheetDescription, SheetHeader, SheetTitle } from "~/components/ui/sheet";
+import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle } from "~/components/ui/dialog";
 import {
     Sidebar,
     SidebarContent,
@@ -75,12 +75,14 @@ export function AppSidebar(props: { user: User; lists: ListSummary[] }) {
                 </SidebarFooter>
             </Sidebar>
 
-            <Sheet open={createOpen()} onOpenChange={setCreateOpen}>
-                <SheetContent>
-                    <SheetHeader>
-                        <SheetTitle>Create a list</SheetTitle>
-                        <SheetDescription>Choose a name, privacy level, and optional starting titles.</SheetDescription>
-                    </SheetHeader>
+            <Dialog open={createOpen()} onOpenChange={setCreateOpen}>
+                <DialogContent>
+                    <DialogHeader>
+                        <DialogTitle>Create a list</DialogTitle>
+                        <DialogDescription>
+                            Choose a name, privacy level, and optional starting titles.
+                        </DialogDescription>
+                    </DialogHeader>
                     <Show when={createOpen()}>
                         <ListForm
                             submitLabel="Create list"
@@ -92,8 +94,8 @@ export function AppSidebar(props: { user: User; lists: ListSummary[] }) {
                             }}
                         />
                     </Show>
-                </SheetContent>
-            </Sheet>
+                </DialogContent>
+            </Dialog>
         </>
     );
 }
