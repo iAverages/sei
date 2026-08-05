@@ -56,7 +56,7 @@ export function AppSidebar(props: { user: User; lists: ListSummary[] }) {
                                     {(list) => (
                                         <SidebarMenuItem>
                                             <Link
-                                                to="/$listId"
+                                                to={list.isDefault ? "/" : "/$listId"}
                                                 params={{ listId: list.id }}
                                                 onClick={() => setOpenMobile(false)}
                                                 class="flex h-8 w-full items-center overflow-hidden rounded-md p-2 text-sm outline-hidden ring-sidebar-ring hover:bg-sidebar-accent hover:text-sidebar-accent-foreground focus-visible:ring-2 data-[status=active]:bg-sidebar-accent data-[status=active]:font-medium data-[status=active]:text-sidebar-accent-foreground"
