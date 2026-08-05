@@ -9,9 +9,6 @@ import tsConfigPaths from "vite-tsconfig-paths";
 export default defineConfig({
     server: {
         port: 3000,
-        proxy: {
-            "/api": "http://localhost:3001/",
-        },
     },
     plugins: [
         tsConfigPaths({
@@ -21,6 +18,16 @@ export default defineConfig({
         tailwindcss(),
         tanstackStart(),
         viteSolid({ ssr: true }),
-        nitro(),
+        nitro({
+            devServer: { runner: "self" },
+            routeRules: {
+                "/api/**": {
+                    proxy: {
+                        to: "http://localhost:3001/api/**",
+                        fetchOptions: { redirect: "manual" },
+                    },
+                },
+            },
+        }),
     ],
 });
