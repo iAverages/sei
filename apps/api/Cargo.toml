@@ -22,7 +22,7 @@ lazy_static = "1.4.0"
 oauth2 = { version = "4.4.2", features = ["pkce-plain"] }
 rand = { version = "0.8.5", features = ["std_rng"] }
 regex = "1.10.3"
-reqwest = { version = "0.12.24", features = ["json"] }
+reqwest = { version = "0.13.0", features = ["json"] }
 sea-query = { version = "1.0.0-rc.14", features = ["derive"] }
 sea-query-sqlx = { version = "0.8.0-rc.9", default-features = false, features = [
     "sqlx-mysql",
