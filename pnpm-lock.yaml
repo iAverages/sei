@@ -133,8 +133,8 @@ importers:
   packages/prisma:
     dependencies:
       '@prisma/client':
-        specifier: ~6.17.0
-        version: 6.17.0(prisma@6.17.0(typescript@5.9.3))(typescript@5.9.3)
+        specifier: ~6.19.0
+        version: 6.19.3(prisma@6.17.0(typescript@5.9.3))(typescript@5.9.3)
       prisma:
         specifier: ~6.17.0
         version: 6.17.0(typescript@5.9.3)
@@ -769,8 +769,8 @@ packages:
   '@preact/signals-core@1.14.4':
     resolution: {integrity: sha512-HNB6HYeYKhQbJ1aKl+YRjrS4+QWHLKX6qKoUsfS/m0vqzsVaEBiZiaKbG/e+NKk2ch5ALQr/ihWaMHxiCuuWHA==}
 
-  '@prisma/client@6.17.0':
-    resolution: {integrity: sha512-b42mTLOdLEZ6e/igu8CLdccAUX9AwHknQQ1+pHOftnzDP2QoyZyFvcANqSLs5ockimFKJnV7Ljf+qrhNYf6oAg==}
+  '@prisma/client@6.19.3':
+    resolution: {integrity: sha512-mKq3jQFhjvko5LTJFHGilsuQs+W+T3Gm451NzuTDGQxwCzwXHYnIu2zGkRoW+Exq3Rob7yp2MfzSrdIiZVhrBg==}
     engines: {node: '>=18.18'}
     peerDependencies:
       prisma: '*'
@@ -3159,7 +3159,7 @@ snapshots:
 
   '@preact/signals-core@1.14.4': {}
 
-  '@prisma/client@6.17.0(prisma@6.17.0(typescript@5.9.3))(typescript@5.9.3)':
+  '@prisma/client@6.19.3(prisma@6.17.0(typescript@5.9.3))(typescript@5.9.3)':
     optionalDependencies:
       prisma: 6.17.0(typescript@5.9.3)
       typescript: 5.9.3
